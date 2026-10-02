@@ -14,4 +14,5 @@ export const MODELS = {
   SUBSTACK:         'claude-sonnet-5',
   COACHING_DAILY:   'claude-sonnet-5',
   COACHING_REFINE:  'claude-haiku-4-5-20251001',
+  DRIVE_KNOWLEDGE:  'claude-sonnet-5',
 }

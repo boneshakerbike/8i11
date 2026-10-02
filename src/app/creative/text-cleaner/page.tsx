@@ -16,11 +16,39 @@ interface TextNote {
   created_at: string;
 }
 
+interface DriveStatus {
+  owner: boolean;
+  configured?: boolean;
+  connected: boolean;
+}
+
+interface DrivePreview {
+  plan_id: string | null;
+  status: 'ready' | 'no_new_info' | 'needs_folder' | 'nothing_valid';
+  reasoning: string;
+  edits: { kind: 'insert' | 'create'; path: string; location: string; text: string; shared: boolean }[];
+  rejected: string[];
+  suggested_folder: string | null;
+}
+
+interface DriveResult {
+  path: string;
+  view_url?: string;
+  result: 'updated' | 'created' | 'skipped';
+  reason?: string;
+}
+
+// Parse a JSON response; the auth proxy answers some requests with a login
+// redirect (HTML), which should read as an error rather than throw.
+const read_json = async (res: Response): Promise<Record<string, unknown> | null> => {
+  try { return await res.json(); } catch { return null; }
+};
+
 export default function TextCleanerPage() {
   const [input, set_input] = useState('');
   const [cleaned, set_cleaned] = useState('');
   const [story, set_story] = useState('');
-  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'story' | 'substack' | 'save' | 'delete' | null>(null);
+  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
   const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | null>(null);
   const [error, set_error] = useState<string | null>(null);
   const [copy_status, set_copy_status] = useState<string | null>(null);
@@ -33,6 +61,9 @@ export default function TextCleanerPage() {
   const [notes, set_notes] = useState<TextNote[]>([]);
   const [confirm_delete_id, set_confirm_delete_id] = useState<string | null>(null);
   const [confirm_delete_context, set_confirm_delete_context] = useState<'copy' | 'story' | null>(null);
+  const [drive_status, set_drive_status] = useState<DriveStatus | null>(null);
+  const [drive_preview, set_drive_preview] = useState<DrivePreview | null>(null);
+  const [drive_results, set_drive_results] = useState<DriveResult[] | null>(null);
   const hydrated = useRef(false);
   const fetch_notes = useCallback(async () => {
     try {
@@ -49,6 +80,31 @@ export default function TextCleanerPage() {
   useEffect(() => {
     fetch_notes();
   }, [fetch_notes]);
+
+  // Drive filing is owner-only; guests get owner:false and never see the button.
+  useEffect(() => {
+    fetch('/api/google/status')
+      .then(read_json)
+      .then(data => { if (data && typeof data.owner === 'boolean') set_drive_status(data as unknown as DriveStatus); })
+      .catch(() => { /* no Drive button */ });
+  }, []);
+
+  // Coming back from Google's consent screen: report the outcome, then tidy the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('drive') === 'connected';
+    const drive_error = params.get('drive_error');
+    if (!connected && !drive_error) return;
+    if (connected) {
+      set_copy_status('Google Drive connected');
+      setTimeout(() => set_copy_status(null), 3000);
+    } else {
+      set_error(drive_error === 'scope_not_granted'
+        ? 'Drive access wasn\'t granted. Connect again and leave the Drive box ticked.'
+        : `Couldn't connect Google Drive (${drive_error}).`);
+    }
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
 
   // Save to localStorage after hydration (hydrated guard prevents overwriting saved data on first render).
   // The raw input is intentionally NOT persisted — recovery only protects the paid/slow output
@@ -248,7 +304,66 @@ export default function TextCleanerPage() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const connect_drive = () => {
+    window.location.href = '/api/google/authorize';
+  };
+
+  // Ask the server where this belongs and what's new. Nothing is written yet.
+  const plan_drive = async () => {
+    if (!cleaned.trim()) return;
+    set_loading_action('drive');
+    set_error(null);
+    set_drive_results(null);
+    try {
+      const res = await fetch('/api/drive-knowledge/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: cleaned }),
+      });
+      const data = await read_json(res);
+      if (!res.ok || !data) {
+        if (data?.not_connected) set_drive_status(s => s ? { ...s, connected: false } : s);
+        set_error((data?.error as string) || 'Couldn\'t work out where this goes in Drive — try again.');
+        return;
+      }
+      set_drive_preview(data as unknown as DrivePreview);
+    } catch (e) {
+      set_error(describe_request_error(e, 'plan the Drive filing'));
+    } finally {
+      set_loading_action(null);
+    }
+  };
+
+  // Write the approved plan. Only the plan id is sent; the edits live on the server.
+  const apply_drive = async () => {
+    if (!drive_preview?.plan_id) return;
+    set_loading_action('drive_apply');
+    set_error(null);
+    try {
+      const res = await fetch('/api/drive-knowledge/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: drive_preview.plan_id }),
+      });
+      const data = await read_json(res);
+      if (!res.ok || !data) {
+        if (data?.not_connected) set_drive_status(s => s ? { ...s, connected: false } : s);
+        set_error((data?.error as string) || 'Couldn\'t write to Drive — try again.');
+        set_drive_preview(null);
+        return;
+      }
+      set_drive_preview(null);
+      set_drive_results(data.results as DriveResult[]);
+    } catch (e) {
+      set_error(describe_request_error(e, 'write to Drive'));
+    } finally {
+      set_loading_action(null);
+    }
+  };
+
   const clear_all = () => {
+    set_drive_preview(null);
+    set_drive_results(null);
     set_input('');
     set_cleaned('');
     set_story('');
@@ -469,6 +584,100 @@ export default function TextCleanerPage() {
           </div>
         )}
 
+        {/* Drive preview: exact files and text, written only on approval */}
+        {(drive_preview || drive_results) && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-[#1e2a3a] border border-white/20 rounded-xl p-6 max-w-2xl w-full shadow-2xl max-h-[85vh] overflow-y-auto">
+              {drive_preview && (
+                <>
+                  <h3 className="text-lg font-medium text-gray-200 mb-2">
+                    {drive_preview.status === 'ready' ? 'Add to Google Drive?'
+                      : drive_preview.status === 'no_new_info' ? 'Nothing new to add'
+                      : drive_preview.status === 'needs_folder' ? 'No folder fits yet'
+                      : 'Nothing could be filed'}
+                  </h3>
+                  {drive_preview.reasoning && (
+                    <p className="text-sm text-gray-400 mb-4">{drive_preview.reasoning}</p>
+                  )}
+                  {drive_preview.status === 'needs_folder' && drive_preview.suggested_folder && (
+                    <p className="text-sm text-gray-300 mb-4">
+                      Suggested folder: <span className="font-mono">{drive_preview.suggested_folder}</span>. Create it in Drive yourself, then run Drive again.
+                    </p>
+                  )}
+                  <div className="space-y-4">
+                    {drive_preview.edits.map((edit, i) => (
+                      <div key={i} className="border border-white/10 rounded-lg overflow-hidden">
+                        <div className="bg-white/5 px-3 py-2 text-sm flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-cyan-300 break-all">{edit.path}</span>
+                          {edit.shared && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Shared with others</span>
+                          )}
+                          <span className="text-xs text-gray-400 w-full">{edit.location}</span>
+                        </div>
+                        <pre className="p-3 text-xs text-gray-200 whitespace-pre-wrap font-mono">{edit.text}</pre>
+                      </div>
+                    ))}
+                  </div>
+                  {drive_preview.rejected.length > 0 && (
+                    <div className="mt-4 text-xs text-gray-400">
+                      <p className="mb-1">Not included:</p>
+                      <ul className="list-disc pl-5 space-y-0.5">
+                        {drive_preview.rejected.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex gap-3 mt-5">
+                    {drive_preview.status === 'ready' && drive_preview.plan_id && (
+                      <button
+                        onClick={apply_drive}
+                        disabled={!!loading_action}
+                        className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black rounded-lg text-sm font-semibold transition-all"
+                      >
+                        {loading_action === 'drive_apply' ? 'Writing...' : 'Approve and write'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => set_drive_preview(null)}
+                      disabled={loading_action === 'drive_apply'}
+                      className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm text-gray-300 transition-all"
+                    >
+                      {drive_preview.status === 'ready' ? 'Cancel' : 'Close'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {drive_results && (
+                <>
+                  <h3 className="text-lg font-medium text-gray-200 mb-4">Drive updated</h3>
+                  <ul className="space-y-2 text-sm">
+                    {drive_results.map((r, i) => (
+                      <li key={i} className="flex flex-wrap items-baseline gap-2">
+                        <span className={r.result === 'skipped' ? 'text-amber-300' : 'text-green-400'}>
+                          {r.result === 'updated' ? 'Updated' : r.result === 'created' ? 'Created' : 'Skipped'}
+                        </span>
+                        <span className="font-mono text-gray-200 break-all">{r.path}</span>
+                        {r.reason && <span className="text-gray-400 w-full text-xs">{r.reason}</span>}
+                        {r.view_url && (
+                          <a href={r.view_url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:text-cyan-300">
+                            Open in Drive
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-gray-500 mt-4">Drive&apos;s version history has the previous version if you want to roll back.</p>
+                  <button
+                    onClick={() => set_drive_results(null)}
+                    className="w-full mt-5 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm text-gray-300 transition-all"
+                  >
+                    Done
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
           {/* Input */}
           <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
@@ -576,6 +785,18 @@ export default function TextCleanerPage() {
                       className="px-3 py-2 sm:py-1 bg-[#333] sm:bg-white/10 hover:bg-violet-400/20 rounded border border-[#555] sm:border-white/20 text-sm text-gray-300 transition-all"
                     >
                       Download .md
+                    </button>
+                  )}
+                  {output_mode === 'knowledge' && drive_status?.owner && drive_status.configured && (
+                    <button
+                      onClick={drive_status.connected ? plan_drive : connect_drive}
+                      disabled={!!loading_action}
+                      title={drive_status.connected
+                        ? 'Find where this belongs in Google Drive and preview what would be added'
+                        : 'Connect Google Drive to file knowledge docs there'}
+                      className="px-3 py-2 sm:py-1 bg-[#333] sm:bg-white/10 hover:bg-green-400/20 disabled:bg-white/10 disabled:text-gray-500 rounded border border-[#555] sm:border-white/20 text-sm text-gray-300 transition-all"
+                    >
+                      {loading_action === 'drive' ? 'Finding place...' : drive_status.connected ? 'Drive' : 'Connect Drive'}
                     </button>
                   )}
                   <button

@@ -1494,6 +1494,122 @@ export async function refresh_oura_access_token(): Promise<OuraTokens> {
   return new_tokens;
 }
 
+// ── Google Drive Tokens ─────────────────────────────────────
+// One connected Google account (Bill's), same singleton shape as oura_tokens.
+// Refreshing lives in lib/google_auth.ts because it needs the owner/error types.
+
+export interface GoogleTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  scope: string;
+}
+
+let google_schema_initialized = false;
+async function ensure_google_schema(): Promise<void> {
+  if (google_schema_initialized) return;
+  const db = get_client();
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS google_tokens (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      scope TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // Plans proposed by /api/drive-knowledge/plan, applied by id so the browser
+  // never sends the edits it wants written.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS drive_plans (
+      id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      applied_at INTEGER
+    )
+  `);
+  google_schema_initialized = true;
+}
+
+export async function save_google_tokens(tokens: GoogleTokens): Promise<void> {
+  await ensure_google_schema();
+  const db = get_client();
+
+  await db.execute({
+    sql: `INSERT INTO google_tokens (id, access_token, refresh_token, expires_at, scope, updated_at)
+          VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(id) DO UPDATE SET
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            expires_at = excluded.expires_at,
+            scope = excluded.scope,
+            updated_at = CURRENT_TIMESTAMP`,
+    args: [tokens.access_token, tokens.refresh_token, tokens.expires_at, tokens.scope]
+  });
+}
+
+export async function get_google_tokens(): Promise<GoogleTokens | null> {
+  await ensure_google_schema();
+  const db = get_client();
+
+  const result = await db.execute('SELECT access_token, refresh_token, expires_at, scope FROM google_tokens WHERE id = 1');
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    access_token: row.access_token as string,
+    refresh_token: row.refresh_token as string,
+    expires_at: row.expires_at as number,
+    scope: row.scope as string,
+  };
+}
+
+export async function delete_google_tokens(): Promise<boolean> {
+  await ensure_google_schema();
+  const db = get_client();
+
+  const result = await db.execute('DELETE FROM google_tokens WHERE id = 1');
+  return result.rowsAffected > 0;
+}
+
+// ── Drive Filing Plans ──────────────────────────────────────
+
+const DRIVE_PLAN_TTL_SECONDS = 30 * 60;
+
+export async function save_drive_plan(id: string, payload: unknown): Promise<void> {
+  await ensure_google_schema();
+  const db = get_client();
+  const now = Math.floor(Date.now() / 1000);
+
+  // Old plans are only useful for a short while; prune as we go.
+  await db.execute({ sql: 'DELETE FROM drive_plans WHERE created_at < ?', args: [now - 24 * 60 * 60] });
+  await db.execute({
+    sql: 'INSERT INTO drive_plans (id, payload, created_at) VALUES (?, ?, ?)',
+    args: [id, JSON.stringify(payload), now]
+  });
+}
+
+/**
+ * Atomically claim an unexpired, unapplied plan and return its payload, or null.
+ * Claiming before writing means a double-click or retry can't apply it twice.
+ */
+export async function claim_drive_plan(id: string): Promise<unknown | null> {
+  await ensure_google_schema();
+  const db = get_client();
+  const now = Math.floor(Date.now() / 1000);
+
+  const claimed = await db.execute({
+    sql: 'UPDATE drive_plans SET applied_at = ? WHERE id = ? AND applied_at IS NULL AND created_at >= ?',
+    args: [now, id, now - DRIVE_PLAN_TTL_SECONDS]
+  });
+  if (claimed.rowsAffected !== 1) return null;
+
+  const result = await db.execute({ sql: 'SELECT payload FROM drive_plans WHERE id = ?', args: [id] });
+  return result.rows.length ? JSON.parse(result.rows[0].payload as string) : null;
+}
+
 // ── Wellness Cache ──────────────────────────────────────────
 
 export interface WellnessSnapshot {
