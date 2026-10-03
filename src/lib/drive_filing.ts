@@ -26,6 +26,9 @@ import {
   update_text,
 } from '@/lib/google_drive';
 import {
+  as_integer,
+  as_object_list,
+  as_string_list,
   DriveEdit,
   DriveFileMeta,
   heading_outline,
@@ -158,7 +161,7 @@ export async function plan_filing(doc: string, client: Anthropic): Promise<PlanR
   const excluded = new Set([my_drive_id, life?.id].filter(Boolean) as string[]);
 
   // 2. Entities to search for (the filing rule's "address, vehicle or person").
-  const { terms } = await call_tool<{ terms: string[] }>(client, {
+  const { terms } = await call_tool<{ terms: unknown }>(client, {
     name: 'report_search_terms',
     description: 'Report the distinctive names to search a Google Drive for.',
     input_schema: {
@@ -179,7 +182,7 @@ List the distinctive names in this knowledge document that would locate where it
 <doc>
 ${content.slice(0, 30000)}
 </doc>`, 1000);
-  const clean_terms = [...new Set((terms || []).map(t => t.trim()).filter(t => t.length >= 3))].slice(0, 8);
+  const clean_terms = [...new Set(as_string_list(terms).filter(t => t.length >= 3))].slice(0, 8);
 
   // 3. Scan every context file in memory, plus Drive full-text for dated records.
   const context_ids = [...new Set(index.context_file_by_folder.values())]
@@ -258,7 +261,7 @@ ${content.slice(0, 30000)}
   // 5. Route: which file is authoritative for this knowledge?
   const route = await call_tool<{
     decision: 'existing_file' | 'new_dated_file' | 'needs_folder';
-    candidate?: number;
+    candidate?: unknown;
     descriptor?: string;
     suggested_folder?: string;
     reasoning: string;
@@ -303,7 +306,8 @@ ${content}
   if (route.decision === 'needs_folder') {
     return { status: 'needs_folder', reasoning, edits: [], rejected: [], suggested_folder: route.suggested_folder };
   }
-  const chosen = typeof route.candidate === 'number' ? candidates[route.candidate] : undefined;
+  const candidate_index = as_integer(route.candidate);
+  const chosen = candidate_index !== undefined ? candidates[candidate_index] : undefined;
   if (!chosen) return { status: 'needs_folder', reasoning: `Couldn't settle on a destination. ${reasoning}`, edits: [], rejected: [] };
 
   // 6. Files that may be edited: the target (or the context file a new record links from)
@@ -359,7 +363,7 @@ ${f.content}
   const placed = await call_tool<{
     status: 'new_info' | 'no_new_info';
     reasoning: string;
-    edits?: { file: string; heading_index: number | null; text: string }[];
+    edits?: unknown;
     new_file_content?: string;
   }>(client, {
     name: 'propose_filing',
@@ -426,11 +430,13 @@ ${content}
       rejected.push('No content was written for the new file.');
     }
   }
-  for (const e of placed.edits || []) {
-    const f = by_label.get(e.file);
-    if (!f) { rejected.push(`Unknown file label ${e.file}`); continue; }
-    const heading_index = e.heading_index === null || e.heading_index === undefined ? null : Number(e.heading_index);
-    if (heading_index !== null && !Number.isInteger(heading_index)) { rejected.push(`${f.meta.path}: bad heading number`); continue; }
+  for (const e of as_object_list<{ file?: unknown; heading_index?: unknown; text?: unknown }>(placed.edits)) {
+    const f = by_label.get(String(e.file ?? ''));
+    if (!f) { rejected.push(`Unknown file label ${String(e.file)}`); continue; }
+    const heading_index = e.heading_index === null || e.heading_index === undefined || e.heading_index === 'null'
+      ? null
+      : as_integer(e.heading_index);
+    if (heading_index === undefined) { rejected.push(`${f.meta.path}: bad heading number`); continue; }
     proposed.push({ kind: 'insert', file_id: f.meta.id, heading_index, text: String(e.text ?? '') });
   }
 

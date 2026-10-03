@@ -164,6 +164,45 @@ export function drive_fulltext_value(term: string): string {
   return /\s/.test(clean) ? drive_query_literal(`"${clean}"`) : drive_query_literal(clean);
 }
 
+// ── Model tool input ────────────────────────────────────────
+// Tool calls sometimes return an array field serialised as a string
+// ('["a","b"]', or one item per line). Accept either rather than crash.
+
+function parse_json_array(value: string): unknown[] | null {
+  const s = value.trim();
+  if (!s.startsWith('[')) return null;
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A list of short strings: a real array, a JSON array string, or one item per line/comma. */
+export function as_string_list(value: unknown): string[] {
+  let items: unknown[] = [];
+  if (Array.isArray(value)) items = value;
+  else if (typeof value === 'string') {
+    items = parse_json_array(value) ?? value.split(/\r?\n|,/).map(s => s.replace(/^\s*(?:[-*]|\d+[.)])\s*/, ''));
+  }
+  return items
+    .map(item => String(item ?? '').trim().replace(/^["']+|["']+$/g, '').trim())
+    .filter(Boolean);
+}
+
+/** A list of objects: a real array or a JSON array string. Anything else is empty. */
+export function as_object_list<T extends object>(value: unknown): T[] {
+  const items = Array.isArray(value) ? value : typeof value === 'string' ? parse_json_array(value) ?? [] : [];
+  return items.filter((item): item is T => !!item && typeof item === 'object' && !Array.isArray(item));
+}
+
+/** An integer from a number or numeric string, else undefined. */
+export function as_integer(value: unknown): number | undefined {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isInteger(n) ? n : undefined;
+}
+
 // ── Edits and their validation ───────────────────────────────
 
 export type DriveEdit =

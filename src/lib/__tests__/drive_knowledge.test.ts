@@ -11,6 +11,9 @@ import {
   drive_query_literal,
   drive_fulltext_value,
   validate_edit,
+  as_string_list,
+  as_object_list,
+  as_integer,
   DriveFileMeta,
   ValidationContext,
 } from '../drive_knowledge';
@@ -227,5 +230,41 @@ describe('validate_edit', () => {
     expect(validate_edit({ kind: 'create', folder_id: 'nowhere', name: '2026-10-01-lawn.md', content: 'x' }, ctx())).toMatch(/context file/);
     expect(validate_edit({ kind: 'create', folder_id: 'home_dir', name: 'LAWN.md', content: 'x' }, ctx())).toMatch(/YYYY/);
     expect(validate_edit({ kind: 'create', folder_id: 'home_dir', name: '2026-07-28-note.md', content: 'x' }, ctx())).toMatch(/already exists/);
+  });
+});
+
+describe('model tool input', () => {
+  it('accepts a real array of strings', () => {
+    expect(as_string_list(['Trek Farley', ' 830 Cleveland '])).toEqual(['Trek Farley', '830 Cleveland']);
+  });
+
+  it('accepts an array serialised as a JSON string', () => {
+    expect(as_string_list('["Trek Farley", "830 Cleveland"]')).toEqual(['Trek Farley', '830 Cleveland']);
+  });
+
+  it('accepts one item per line or comma', () => {
+    expect(as_string_list('- Trek Farley\n- 830 Cleveland')).toEqual(['Trek Farley', '830 Cleveland']);
+    expect(as_string_list('Vercel, Google Cloud')).toEqual(['Vercel', 'Google Cloud']);
+  });
+
+  it('returns empty for missing or odd input', () => {
+    expect(as_string_list(undefined)).toEqual([]);
+    expect(as_string_list(42)).toEqual([]);
+  });
+
+  it('parses object lists from arrays or JSON strings only', () => {
+    const edits = [{ file: 'F1', heading_index: 2, text: '- x' }];
+    expect(as_object_list(edits)).toEqual(edits);
+    expect(as_object_list(JSON.stringify(edits))).toEqual(edits);
+    expect(as_object_list('F1, 2, - x')).toEqual([]);
+    expect(as_object_list(['a', null, { ok: 1 }])).toEqual([{ ok: 1 }]);
+  });
+
+  it('reads integers from numbers or numeric strings', () => {
+    expect(as_integer(3)).toBe(3);
+    expect(as_integer('3')).toBe(3);
+    expect(as_integer('3.5')).toBeUndefined();
+    expect(as_integer('')).toBeUndefined();
+    expect(as_integer(null)).toBeUndefined();
   });
 });
