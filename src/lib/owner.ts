@@ -8,8 +8,12 @@
  */
 
 export function allowed_github_users(): string[] {
-  return process.env.ALLOWED_GITHUB_USERS?.split(',').map(u => u.trim()).filter(Boolean)
-    || ['boneshakerbike'];
+  // A blank or comma-only ALLOWED_GITHUB_USERS must fall back to the default
+  // rather than producing [''] and denying every login.
+  const configured = process.env.ALLOWED_GITHUB_USERS?.split(',')
+    .map(u => u.trim())
+    .filter(Boolean) ?? [];
+  return configured.length > 0 ? configured : ['boneshakerbike'];
 }
 
 /** True only for a session that signed in with GitHub as an allowed login. */

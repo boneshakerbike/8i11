@@ -7,6 +7,7 @@
 import { signIn } from 'next-auth/react';
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { sign_in_error_message } from '@/lib/auth_errors';
 
 function LoginForm() {
   const [pin, set_pin] = useState('');
@@ -15,6 +16,7 @@ function LoginForm() {
   const search_params = useSearchParams();
   const callback_url = search_params.get('callbackUrl') ?? '/';
   const oauth_error = search_params.get('error');
+  const oauth_message = sign_in_error_message(oauth_error);
   const is_preview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview';
 
   const handle_pin_submit = async (e: React.FormEvent) => {
@@ -106,7 +108,7 @@ function LoginForm() {
       </p>
 
       {oauth_error && (
-        <p
+        <div
           style={{
             color: '#ff6b6b',
             fontSize: '13px',
@@ -114,14 +116,23 @@ function LoginForm() {
             padding: '10px 16px',
             backgroundColor: 'rgba(255, 107, 107, 0.1)',
             borderRadius: '6px',
+            textAlign: 'left',
           }}
         >
-          Sign-in failed. Try opening{' '}
-          <a href="https://8i11.vercel.app" style={{ color: '#00d9ff', textDecoration: 'none' }}>
-            8i11.vercel.app
-          </a>
-          {' '}directly in your browser.
-        </p>
+          <p style={{ margin: 0 }}>{oauth_message.text}</p>
+          {oauth_message.retryable && (
+            <p style={{ margin: '8px 0 0', color: '#bbb' }}>
+              If it keeps failing, try opening{' '}
+              <a href="https://8i11.vercel.app" style={{ color: '#00d9ff', textDecoration: 'none' }}>
+                8i11.vercel.app
+              </a>
+              {' '}directly in your browser rather than an in-app one.
+            </p>
+          )}
+          <p style={{ margin: '8px 0 0', color: '#888', fontSize: '11px' }}>
+            Error code: <code>{oauth_error}</code>
+          </p>
+        </div>
       )}
 
       <button

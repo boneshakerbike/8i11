@@ -8,11 +8,53 @@ import GitHubProvider from 'next-auth/providers/github';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { allowed_github_users } from '@/lib/owner';
 
+/** Timeout for OAuth calls to GitHub. See the GitHubProvider comment below. */
+const OAUTH_HTTP_TIMEOUT_MS = 10_000;
+
+/**
+ * Unwraps the error NextAuth reports so the underlying cause reaches the logs.
+ * NextAuth wraps OAuth failures in an OAuthCallbackError whose own message is
+ * often all that gets printed; openid-client's RPError carries the useful
+ * detail (HTTP status and provider response body) on nested properties.
+ */
+function describe_auth_error(metadata: unknown): Record<string, unknown> {
+  const error = (metadata as { error?: unknown })?.error ?? metadata;
+  const e = error as {
+    name?: string;
+    message?: string;
+    stack?: string;
+    response?: { status?: number; body?: unknown };
+    cause?: { message?: string };
+  };
+  return {
+    name: e?.name,
+    message: e?.message,
+    cause: e?.cause?.message,
+    status: e?.response?.status,
+    body: e?.response?.body,
+    stack: e?.stack,
+  };
+}
+
 export const auth_options: NextAuthOptions = {
   providers: [
     GitHubProvider({
       clientId: process.env.GITHUB_CLIENT_ID ?? '',
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+      // GitHub now returns an `iss` parameter on the OAuth callback (RFC 9207).
+      // openid-client validates it against the issuer, and next-auth v4's GitHub
+      // provider never set one, so the check threw
+      // "issuer must be configured on the issuer" and every sign-in failed with
+      // ?error=OAuthCallback. GitHub's issuer identifier is the full
+      // https://github.com/login/oauth, not the bare origin; the bare origin
+      // trades that TypeError for "iss mismatch".
+      issuer: 'https://github.com/login/oauth',
+      // openid-client defaults to a 3500ms timeout for every outgoing call.
+      // The GitHub callback makes two of them back to back (token exchange,
+      // then api.github.com/user), and on a cold serverless function either
+      // can exceed that, aborting the whole callback with ?error=OAuthCallback
+      // after the user has already authorised on GitHub.
+      httpOptions: { timeout: OAUTH_HTTP_TIMEOUT_MS },
     }),
     CredentialsProvider({
       id: 'guest-pin',
@@ -87,6 +129,7 @@ export const auth_options: NextAuthOptions = {
 
       // Restrict GitHub login to allowed users by unique login (not display name)
       // Set ALLOWED_GITHUB_USERS=user1,user2 in env, or defaults to boneshakerbike
+      // (blank or comma-only falls back to the default; see lib/owner.ts)
       const allowed_users = allowed_github_users();
 
       if (account?.provider === 'github') {
@@ -119,6 +162,15 @@ export const auth_options: NextAuthOptions = {
       }
       return session;
     },
+  },
+  logger: {
+    error(code, metadata) {
+      console.error(`[next-auth][error][${code}]`, JSON.stringify(describe_auth_error(metadata)));
+    },
+    warn(code) {
+      console.warn(`[next-auth][warn][${code}]`);
+    },
+    debug() {},
   },
   session: {
     strategy: 'jwt',

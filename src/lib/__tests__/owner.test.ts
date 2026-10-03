@@ -16,6 +16,11 @@ describe('is_owner_token', () => {
     expect(is_owner_token({ provider: 'github', login: 'boneshakerbike' })).toBe(false);
   });
 
+  it('falls back to the default when ALLOWED_GITHUB_USERS is blank', () => {
+    process.env.ALLOWED_GITHUB_USERS = ' , ';
+    expect(is_owner_token({ provider: 'github', login: 'boneshakerbike' })).toBe(true);
+  });
+
   it('rejects guest and admin PIN sessions', () => {
     expect(is_owner_token({ provider: 'guest-pin' })).toBe(false);
     expect(is_owner_token({ provider: 'admin-pin' })).toBe(false);

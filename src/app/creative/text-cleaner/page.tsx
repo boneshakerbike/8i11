@@ -48,8 +48,8 @@ export default function TextCleanerPage() {
   const [input, set_input] = useState('');
   const [cleaned, set_cleaned] = useState('');
   const [story, set_story] = useState('');
-  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
-  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | null>(null);
+  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
+  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | null>(null);
   const [error, set_error] = useState<string | null>(null);
   const [copy_status, set_copy_status] = useState<string | null>(null);
   const [clean_usage, set_clean_usage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
@@ -141,7 +141,7 @@ export default function TextCleanerPage() {
       if (saved_story)   set_story(saved_story);
       if (saved_cleaned) {
         set_output_mode(
-          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge'
+          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge' || saved_output_mode === 'first_person'
             ? saved_output_mode
             : 'clean'
         );
@@ -195,13 +195,14 @@ export default function TextCleanerPage() {
     return `Couldn't ${action} — try again.`;
   };
 
-  const rewrite_labels: Record<'clean' | 'clarify' | 'knowledge', string> = {
+  const rewrite_labels: Record<'clean' | 'clarify' | 'knowledge' | 'first_person', string> = {
     clean: 'clean text',
     clarify: 'clarify text',
     knowledge: 'build knowledge doc',
+    first_person: 'convert to first person',
   };
 
-  const run_rewrite = async (op: 'clean' | 'clarify' | 'knowledge') => {
+  const run_rewrite = async (op: 'clean' | 'clarify' | 'knowledge' | 'first_person') => {
     if (!input.trim()) return;
 
     set_loading_action(op);
@@ -237,6 +238,7 @@ export default function TextCleanerPage() {
   const clean = () => run_rewrite('clean');
   const clarify = () => run_rewrite('clarify');
   const knowledge_doc = () => run_rewrite('knowledge');
+  const first_person = () => run_rewrite('first_person');
 
   // Hand the markdown to the browser as a file. Object URL rather than a data:
   // URL so a long document isn't capped by the URL length limit.
@@ -714,14 +716,24 @@ export default function TextCleanerPage() {
                 {loading_action === 'clarify' ? 'Clarifying...' : 'Clarify'}
               </button>
             </div>
-            <button
-              onClick={knowledge_doc}
-              disabled={!!loading_action || !input.trim()}
-              title="Distil this into a knowledge document in Markdown"
-              className="w-full sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
-            >
-              {loading_action === 'knowledge' ? 'Distilling...' : 'Knowledge'}
-            </button>
+            <div className="flex gap-3 sm:contents">
+              <button
+                onClick={knowledge_doc}
+                disabled={!!loading_action || !input.trim()}
+                title="Distil this into a knowledge document in Markdown"
+                className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
+              >
+                {loading_action === 'knowledge' ? 'Distilling...' : 'Knowledge'}
+              </button>
+              <button
+                onClick={first_person}
+                disabled={!!loading_action || !input.trim()}
+                title="Rewrite this in the first person (I, me, my)"
+                className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
+              >
+                {loading_action === 'first_person' ? 'Converting...' : 'First Person'}
+              </button>
+            </div>
             <button
               onClick={clear_all}
               className="w-full sm:w-auto px-4 py-2.5 sm:py-3 bg-[#333] sm:bg-white/10 hover:bg-red-400/20 rounded-lg border border-[#555] sm:border-white/20 text-gray-300 text-sm transition-all"
@@ -748,7 +760,7 @@ export default function TextCleanerPage() {
               <div className="bg-white/5 px-4 py-2 border-b border-white/10 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium text-gray-300">
-                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : 'Cleaned'}
+                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : output_mode === 'first_person' ? 'First Person' : 'Cleaned'}
                   </h3>
                   {clean_usage && (
                     <span className="text-xs text-gray-400">
