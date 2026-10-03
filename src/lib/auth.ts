@@ -6,6 +6,7 @@
 import { NextAuthOptions } from 'next-auth';
 import GitHubProvider from 'next-auth/providers/github';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { allowed_github_users } from '@/lib/owner';
 
 /** Timeout for OAuth calls to GitHub. See the GitHubProvider comment below. */
 const OAUTH_HTTP_TIMEOUT_MS = 10_000;
@@ -128,12 +129,8 @@ export const auth_options: NextAuthOptions = {
 
       // Restrict GitHub login to allowed users by unique login (not display name)
       // Set ALLOWED_GITHUB_USERS=user1,user2 in env, or defaults to boneshakerbike
-      // A blank or comma-only ALLOWED_GITHUB_USERS must fall back to the
-      // default rather than producing [''] and denying every login.
-      const configured_users = process.env.ALLOWED_GITHUB_USERS?.split(',')
-        .map(u => u.trim())
-        .filter(Boolean) ?? [];
-      const allowed_users = configured_users.length > 0 ? configured_users : ['boneshakerbike'];
+      // (blank or comma-only falls back to the default; see lib/owner.ts)
+      const allowed_users = allowed_github_users();
 
       if (account?.provider === 'github') {
         const login = (profile as { login?: string })?.login ?? '';
@@ -144,6 +141,18 @@ export const auth_options: NextAuthOptions = {
       }
 
       return true;
+    },
+    async jwt({ token, account, profile }) {
+      // Record how the session signed in. Owner-only features (see lib/owner.ts)
+      // require provider 'github' plus an allowed login, so guest and admin PIN
+      // sessions can never reach them.
+      if (account) {
+        token.provider = account.provider;
+        if (account.provider === 'github') {
+          token.login = (profile as { login?: string })?.login ?? '';
+        }
+      }
+      return token;
     },
     async session({ session, token }) {
       // Add user info to session
