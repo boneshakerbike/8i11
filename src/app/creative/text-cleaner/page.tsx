@@ -736,7 +736,7 @@ export default function TextCleanerPage() {
             </div>
             <button
               onClick={clear_all}
-              className="w-full sm:w-auto px-4 py-2.5 sm:py-3 bg-[#333] sm:bg-white/10 hover:bg-red-400/20 rounded-lg border border-[#555] sm:border-white/20 text-gray-300 text-sm transition-all"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-3 bg-amber-500/15 hover:bg-amber-500/30 rounded-lg border border-amber-400/70 text-amber-200 text-sm font-medium transition-all"
             >
               Clear
             </button>
