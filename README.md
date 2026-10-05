@@ -1,4 +1,4 @@
-# 8i11 — onthisday
+# 8i11
 
 Personal Next.js app: On This Day stories, text tools, health dashboards (Oura / Ride with GPS / COROS), F1 predictions, games, and weather.
 
