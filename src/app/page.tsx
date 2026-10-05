@@ -31,8 +31,8 @@ interface Category {
 }
 
 const ADMIN_QUICK_LINKS = [
-  { label: 'Repo',      href: 'https://github.com/boneshakerbike/onthisday' },
-  { label: 'Issues',    href: 'https://github.com/boneshakerbike/onthisday/issues' },
+  { label: 'Repo',      href: 'https://github.com/boneshakerbike/8i11' },
+  { label: 'Issues',    href: 'https://github.com/boneshakerbike/8i11/issues' },
   { label: 'Deploys',   href: 'https://vercel.com/boneshakerbikes-projects/~/deployments' },
   { label: 'Env Vars',  href: 'https://vercel.com/boneshakerbikes-projects/8i11/settings/environment-variables' },
   { label: 'Console',   href: 'https://console.anthropic.com' },
@@ -235,7 +235,7 @@ export default function HomePage() {
                 <p className="mb-3">PINs let friends access the app without a GitHub account. Stored in Vercel env vars.</p>
                 <h4 className="font-medium text-cyan-400 mt-3 mb-2">Add or change PINs</h4>
                 <ol className="list-decimal list-inside space-y-1.5 text-gray-300 text-sm">
-                  <li>Vercel Dashboard → <strong>onthisday</strong> → Settings → Environment Variables</li>
+                  <li>Vercel Dashboard → <strong>8i11</strong> → Settings → Environment Variables</li>
                   <li>Find or create <code className="bg-white/10 px-1 rounded">GUEST_PINS</code></li>
                   <li>Set value: <code className="bg-white/10 px-1 rounded">mom1234,friend5678</code></li>
                   <li>Save → Deployments → ... → Redeploy</li>

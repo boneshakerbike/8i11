@@ -5,7 +5,7 @@
  * the title and body filled in, and the author submits it there.
  */
 
-export const ISSUES_REPO = 'boneshakerbike/onthisday';
+export const ISSUES_REPO = 'boneshakerbike/8i11';
 
 /** Longest title GitHub accepts is 256; keep it shorter so it reads as a summary. */
 const MAX_TITLE = 70;
