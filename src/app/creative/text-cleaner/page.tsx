@@ -58,6 +58,7 @@ export default function TextCleanerPage() {
   const [image_previews, set_image_previews] = useState<string[]>([]);
   const [substack, set_substack] = useState('');
   const [substack_usage, set_substack_usage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
+  const [substack_warnings, set_substack_warnings] = useState<string[]>([]);
   const [notes, set_notes] = useState<TextNote[]>([]);
   const [confirm_delete_id, set_confirm_delete_id] = useState<string | null>(null);
   const [confirm_delete_context, set_confirm_delete_context] = useState<'copy' | 'story' | null>(null);
@@ -157,7 +158,7 @@ export default function TextCleanerPage() {
   // Returns { res, data } for any JSON response (ok or not) so callers handle server
   // errors; throws Error('TIMEOUT') for non-JSON bodies (504 gateway pages) and the
   // underlying TypeError for dropped connections. Real server errors are not retried.
-  const post_clean_text = async (body: object): Promise<{ res: Response; data: { error?: string; cleaned?: string; story?: string; substack?: string; truncated?: boolean; usage?: { input_tokens: number; output_tokens: number } } }> => {
+  const post_clean_text = async (body: object): Promise<{ res: Response; data: { error?: string; cleaned?: string; story?: string; substack?: string; truncated?: boolean; warnings?: string[]; usage?: { input_tokens: number; output_tokens: number } } }> => {
     let last_err: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -228,6 +229,7 @@ export default function TextCleanerPage() {
       set_story_usage(null);
       set_substack('');
       set_substack_usage(null);
+      set_substack_warnings([]);
     } catch (e) {
       set_error(describe_request_error(e, rewrite_labels[op]));
     } finally {
@@ -272,6 +274,7 @@ export default function TextCleanerPage() {
       set_story_usage(data.usage ?? null);
       set_substack('');
       set_substack_usage(null);
+      set_substack_warnings([]);
     } catch (e) {
       set_error(describe_request_error(e, 'build story'));
     } finally {
@@ -377,6 +380,7 @@ export default function TextCleanerPage() {
     set_image_previews([]);
     set_substack('');
     set_substack_usage(null);
+    set_substack_warnings([]);
     set_output_mode(null);
   };
 
@@ -514,6 +518,7 @@ export default function TextCleanerPage() {
       if (!res.ok) { set_error(data.error || 'Something went wrong'); return; }
       set_substack(data.substack ?? '');
       set_substack_usage(data.usage ?? null);
+      set_substack_warnings(data.warnings ?? []);
     } catch (e) {
       set_error(describe_request_error(e, 'generate Substack post'));
     } finally {
@@ -907,6 +912,23 @@ export default function TextCleanerPage() {
                   </button>
                 </div>
               </div>
+              {substack_warnings.length > 0 && (
+                <div className="px-4 py-3 bg-amber-400/10 border-b border-amber-400/30 text-sm text-amber-200">
+                  <p className="font-medium mb-1">
+                    {substack_warnings.length === 1
+                      ? 'One title option still has a problem:'
+                      : `${substack_warnings.length} title options still have problems:`}
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-amber-200/90">
+                    {substack_warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-amber-200/70">
+                    The post below is still usable, just pick a different option.
+                  </p>
+                </div>
+              )}
               <textarea
                 value={substack}
                 onChange={e => set_substack(e.target.value)}

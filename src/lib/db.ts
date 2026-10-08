@@ -8,6 +8,7 @@ import path from 'path';
 import { createClient, Client } from '@libsql/client';
 import { StoryAudit } from '@/lib/story_audit';
 import { normalize_title, TitlePair } from '@/lib/substack_titles';
+import type { VoiceExemplar } from '@/lib/voice_corpus';
 
 // Detect if we're using Turso (production) or SQLite (local)
 const is_turso = !!process.env.TURSO_DATABASE_URL;
@@ -2000,6 +2001,36 @@ export async function get_published_titles(limit: number = 200): Promise<TitlePa
     title: (row.title as string) || '',
     subtitle: (row.subtitle as string) || ''
   })).filter(p => p.title);
+}
+
+/**
+ * Title + subtitle pairs from published posts, for voice grounding.
+ *
+ * Deliberately NOT limited by recency: sample_voice_exemplars spreads across
+ * years, and truncating by date here would make the excluded years unreachable
+ * no matter what the sampler does. Three narrow columns across the archive is
+ * cheap.
+ *
+ * The subtitle filter is load-bearing — add_post_from_rss inserts subtitle as
+ * NULL with INSERT OR IGNORE, so RSS-seen posts never gain one on the
+ * incremental path. A full re-import restores them.
+ */
+export async function get_voice_pool(): Promise<VoiceExemplar[]> {
+  await ensure_schema();
+  const db = get_client();
+
+  const result = await db.execute(`
+    SELECT title, subtitle, local_date FROM posts
+    WHERE subtitle IS NOT NULL AND trim(subtitle) <> ''
+  `);
+
+  return result.rows
+    .map(row => ({
+      title: ((row.title as string) || '').trim(),
+      subtitle: ((row.subtitle as string) || '').trim(),
+      year: parseInt(((row.local_date as string) || '').substring(0, 4), 10),
+    }))
+    .filter(e => e.title && e.subtitle && Number.isFinite(e.year));
 }
 
 /** Titles the generator has previously offered, newest first. */

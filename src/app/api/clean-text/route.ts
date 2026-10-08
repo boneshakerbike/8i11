@@ -7,15 +7,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
+import { first_text } from '@/lib/anthropic_response';
 import {
   all_offered_pairs,
+  build_exemplar_block,
   CLICHE_PATTERNS,
+  EXPECTED_ALTERNATES,
+  find_structural_problems,
+  find_subtitle_copies,
   find_title_problems,
   parse_substack_output,
   pick_title_angles,
+  TITLE_EXEMPLARS,
   TitlePair,
 } from '@/lib/substack_titles';
-import { get_generated_titles, get_published_titles, record_generated_titles } from '@/lib/db';
+import {
+  build_voice_block,
+  exemplar_subtitles,
+  exemplar_titles,
+  make_seeded_rand,
+  sample_voice_exemplars,
+  VoiceExemplar,
+} from '@/lib/voice_corpus';
+import { build_canon_block, build_endorsed_block, ENDORSED_TITLES } from '@/lib/canon';
+import {
+  get_generated_titles,
+  get_published_titles,
+  get_voice_pool,
+  record_generated_titles,
+} from '@/lib/db';
+import { sync_rss_bounded } from '@/lib/rss_sync';
 
 // Substack generation with vision can run long; Vercel Pro allows up to 300s.
 export const maxDuration = 300;
@@ -68,24 +89,59 @@ export async function POST(request: NextRequest) {
 
       const client = new Anthropic({ apiKey: api_key });
 
-      // Title history: published Substack posts + everything this tool has
-      // previously offered. Best-effort — a DB hiccup must not block a story.
-      let used_titles: TitlePair[] = [];
+      // Comparison mode: no database writes, no RSS refresh, and a seeded
+      // sampler so an A/B run shows both arms identical grounding.
+      const preview = body.preview === true;
+      const rand = typeof body.seed === 'number' ? make_seeded_rand(body.seed) : Math.random;
+
+      // The text-cleaner page never calls /api/sync, so without an awaited
+      // refresh here the published-title history is only as fresh as the last
+      // visit to the On This Day page. Bounded and best-effort: stale history
+      // beats a hung generation.
+      if (!preview) await sync_rss_bounded();
+
+      // Best-effort — a DB hiccup must not block a story.
+      let published: TitlePair[] = [];
+      let offered: TitlePair[] = [];
+      let voice_pool: VoiceExemplar[] = [];
       try {
-        const [published, generated] = await Promise.all([
+        [published, offered, voice_pool] = await Promise.all([
           get_published_titles(150),
           get_generated_titles(150),
+          get_voice_pool(),
         ]);
-        used_titles = [...generated, ...published];
       } catch (e) {
         console.error('Title history lookup failed:', e instanceof Error ? e.message : String(e));
       }
 
-      const previous_titles = used_titles.map(t => t.title);
-      const angles = pick_title_angles(3);
+      const voice_exemplars = sample_voice_exemplars(voice_pool, 24, rand);
+      const voice_block = build_voice_block(voice_exemplars);
+      const endorsed_block = build_endorsed_block();
+      const canon_block = build_canon_block();
+      const exemplar_block = build_exemplar_block();
+      const angles = pick_title_angles(3, rand);
 
-      const used_titles_block = used_titles.length > 0
-        ? used_titles.slice(0, 200).map(t => `- ${t.title}`).join('\n')
+      // Every example title we actually put in the prompt is also something the
+      // model must not hand back. Checking the supplied set directly avoids
+      // depending on whether it happens to fall inside the history window.
+      const supplied_titles = [
+        ...TITLE_EXEMPLARS.map(e => e.title),
+        ...ENDORSED_TITLES,
+        ...exemplar_titles(voice_exemplars),
+      ];
+      const supplied_subtitles = exemplar_subtitles(voice_exemplars);
+
+      const previous_titles = [
+        ...offered.map(t => t.title),
+        ...published.map(t => t.title),
+        ...supplied_titles,
+      ];
+
+      const published_block = published.length > 0
+        ? published.slice(0, 40).map(t => `- ${t.title}`).join('\n')
+        : '(none yet)';
+      const offered_block = offered.length > 0
+        ? offered.slice(0, 40).map(t => `- ${t.title}`).join('\n')
         : '(none yet)';
 
       const banned_templates_block = CLICHE_PATTERNS.map(p => `- ${p.name}`).join('\n');
@@ -152,16 +208,27 @@ This is the part that matters most, and the part most often done badly. Read the
 - Use the actual nouns from the story, the odd ones especially: the equipment, the place names, the animals, the errands, the rule the author made up.
 - No colons. No "A Story of". No rhyming. No alliteration for its own sake.
 
-**Banned title templates.** These are worn out. Do not produce a title that fits any of these shapes, in any wording:
-${banned_templates_block}
+${exemplar_block}
 
-Also avoid anything that merely rhymes with those shapes, e.g. "Something Something, Again and Again", "When the Wind Had Other Plans", "The Quiet Art of Waiting". If a title feels like it came pre-made off a shelf, throw it out and write another.
+${endorsed_block}
 
-**Titles already used.** Every title below has been used before. Do not repeat any of them and do not produce a near-reword of one:
-${used_titles_block}
+${voice_block}
+
+${canon_block}
 
 **Angles to try for this post.** Push at least a couple of your options through these specific approaches:
 ${angles.map(a => `- ${a}`).join('\n')}
+
+**Tired shapes.** These are worn out from overuse everywhere, not just here. Treat them as a warning about where generic titles come from, and write something that is not one of them:
+${banned_templates_block}
+
+Anything that merely rhymes with those shapes is the same problem, e.g. "Something Something, Again and Again", "When the Wind Had Other Plans", "The Quiet Art of Waiting". If a title feels like it came pre-made off a shelf, throw it out and write another.
+
+**The author's own published titles.** These are already out there under his name. Do not repeat one or produce a near-reword:
+${published_block}
+
+**Options already suggested on earlier runs.** Never published, but already seen. Do not hand one back:
+${offered_block}
 
 **The subtitle** (10 to 25 words, one sentence, no period required):
 - This is NOT a second punchline. It is the deck: it tells the reader what the post actually contains, in a wry, slightly deadpan voice.
@@ -189,13 +256,8 @@ captions
 
 alternate titles
 
-[Six more title and subtitle pairs, each genuinely different from the headline pair and from each other, not six rewordings of one idea. Range from dry to absurd. Follow every title and subtitle rule above. Format each on one line, exactly like this:]
-1. Title: [title] | Sub Title: [subtitle]
-2. Title: [title] | Sub Title: [subtitle]
-3. Title: [title] | Sub Title: [subtitle]
-4. Title: [title] | Sub Title: [subtitle]
-5. Title: [title] | Sub Title: [subtitle]
-6. Title: [title] | Sub Title: [subtitle]`;
+[Exactly ${EXPECTED_ALTERNATES} more title and subtitle pairs, each genuinely different from the headline pair and from each other, not ${EXPECTED_ALTERNATES} rewordings of one idea. Range from dry to absurd. Follow every title and subtitle rule above. Every line needs both a title and a subtitle. Format each on one line, exactly like this:]
+${Array.from({ length: EXPECTED_ALTERNATES }, (_, i) => `${i + 1}. Title: [title] | Sub Title: [subtitle]`).join('\n')}`;
 
       const content_blocks: Anthropic.MessageParam['content'] = [];
 
@@ -212,7 +274,11 @@ alternate titles
         }
       }
 
-      content_blocks.push({ type: 'text', text: prompt_text });
+      // Optional blocks (endorsed titles, canon, voice) render as '' when
+      // empty, so collapse the blank runs they leave behind.
+      const prompt_final = prompt_text.replace(/\n{3,}/g, '\n\n');
+
+      content_blocks.push({ type: 'text', text: prompt_final });
 
       const messages: Anthropic.MessageParam[] = [{ role: 'user', content: content_blocks }];
 
@@ -223,8 +289,7 @@ alternate titles
         messages: msgs,
       });
 
-      const text_of = (result: Anthropic.Message) =>
-        result.content[0]?.type === 'text' ? result.content[0].text.trim() : '';
+      const text_of = (result: Anthropic.Message) => first_text(result);
 
       const first = await run_substack(messages);
       let substack_raw = text_of(first);
@@ -232,16 +297,23 @@ alternate titles
       let output_tokens = first.usage.output_tokens;
 
       let parsed = parse_substack_output(substack_raw);
-      const problems = find_title_problems(parsed, previous_titles);
+      let stop_reason = first.stop_reason;
 
-      // One corrective pass when the model reaches for a worn-out template or
-      // repeats a title. Narrative stays put; only the titles get rewritten.
+      const all_problems = (p: typeof parsed) => [
+        ...find_title_problems(p, previous_titles),
+        ...find_subtitle_copies(p, supplied_subtitles),
+      ];
+      const problems = all_problems(parsed);
+
+      // One corrective pass when a title repeats something, breaks the word
+      // bound, or lifts a supplied example. Narrative stays put; only the
+      // titles get rewritten.
       if (problems.length > 0 && substack_raw) {
         const retry_instruction = `These titles do not pass:
 
 ${problems.map(p => `- "${p.title}" ${p.reason}`).join('\n')}
 
-Output the post again, byte for byte identical in the narrative and the captions, but replace every title and subtitle listed above with a new one. Keep the same output format. The replacements must not fit any banned template, must not repeat or reword any already-used title, and must be built from the specific details of this story.`;
+Output the post again, byte for byte identical in the narrative and the captions, but replace every title and subtitle listed above with a new one. Keep the same output format. A replacement that is merely inoffensive is a failure: name something concrete from this story. The replacements must not repeat or reword any title already listed above, and must stay within 2 to 7 words.`;
 
         try {
           const second = await run_substack([
@@ -254,23 +326,47 @@ Output the post again, byte for byte identical in the narrative and the captions
           output_tokens += second.usage.output_tokens;
 
           const retry_parsed = parse_substack_output(retry_raw);
-          // Only take the retry if it is actually cleaner than the first pass.
+          // Take the retry only when it is structurally sound and has fewer
+          // problems. This cannot tell whether it is funnier — nothing here can.
           if (
             retry_parsed.title &&
-            find_title_problems(retry_parsed, previous_titles).length < problems.length
+            find_structural_problems(retry_parsed).length === 0 &&
+            all_problems(retry_parsed).length < problems.length
           ) {
             substack_raw = retry_raw;
             parsed = retry_parsed;
+            stop_reason = second.stop_reason;
           }
         } catch (e) {
           console.error('Substack title retry failed:', e instanceof Error ? e.message : String(e));
         }
       }
 
-      try {
-        await record_generated_titles(all_offered_pairs(parsed));
-      } catch (e) {
-        console.error('Title history write failed:', e instanceof Error ? e.message : String(e));
+      // Hard failures: a half-result must not come back dressed as success.
+      if (stop_reason === 'max_tokens') {
+        return NextResponse.json(
+          { error: 'The response was cut off before it finished. Try again.' },
+          { status: 502 }
+        );
+      }
+
+      const structural = find_structural_problems(parsed);
+      if (structural.length > 0) {
+        return NextResponse.json(
+          { error: `The model returned an incomplete post: ${structural.join('; ')}.` },
+          { status: 502 }
+        );
+      }
+
+      // Soft failures: usable output, but say so rather than shipping silently.
+      const warnings = all_problems(parsed).map(p => `"${p.title}" ${p.reason}`);
+
+      if (!preview) {
+        try {
+          await record_generated_titles(all_offered_pairs(parsed));
+        } catch (e) {
+          console.error('Title history write failed:', e instanceof Error ? e.message : String(e));
+        }
       }
 
       const substack_text = substack_raw
@@ -280,6 +376,7 @@ Output the post again, byte for byte identical in the narrative and the captions
       return NextResponse.json({
         success: true,
         substack: substack_text,
+        warnings,
         usage: { input_tokens, output_tokens },
       });
     }
@@ -404,9 +501,7 @@ Return only the cleaned text. No commentary, no quotes, no preamble.`;
       messages: [{ role: 'user', content: prompt_text }],
     });
 
-    const cleaned_raw = result.content[0].type === 'text'
-      ? result.content[0].text.trim()
-      : '';
+    const cleaned_raw = first_text(result);
     const cleaned = cleaned_raw
       .replace(/\s*—\s*/g, ', ')
       .replace(/\s*–\s*/g, ', ');
