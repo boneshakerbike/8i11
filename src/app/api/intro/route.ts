@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
+import { first_text } from '@/lib/anthropic_response';
 
 interface PostSummary {
   year: number;
@@ -72,14 +73,14 @@ Output ONLY the intro, nothing else.`;
       ]
     });
 
-    const content = message.content[0];
-    if (content.type !== 'text') {
+    const raw_text = first_text(message);
+    if (!raw_text) {
       throw new Error('Unexpected response type');
     }
 
     return NextResponse.json({
       success: true,
-      intro: content.text.trim(),
+      intro: raw_text,
       usage: {
         input_tokens: message.usage.input_tokens,
         output_tokens: message.usage.output_tokens

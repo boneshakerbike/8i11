@@ -9,6 +9,7 @@ import { get_posts_on_date, get_post_url, save_story, save_story_audit } from '@
 import { build_story_audit } from '@/lib/story_audit';
 import { pick_story_image_url } from '@/lib/story_image';
 import { MODELS } from '@/lib/models';
+import { first_text } from '@/lib/anthropic_response';
 
 function stripCodeFences(text: string): string {
   let cleaned = text.trim();
@@ -163,12 +164,12 @@ ${formatted_posts}`;
       ]
     });
 
-    const content = message.content[0];
-    if (content.type !== 'text') {
+    const raw_text = first_text(message);
+    if (!raw_text) {
       throw new Error('Unexpected response type');
     }
 
-    const response_text = stripCodeFences(content.text);
+    const response_text = stripCodeFences(raw_text);
     const story = extractTagContent(response_text, 'story');
 
     if (!story) {

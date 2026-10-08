@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
+import { first_text } from '@/lib/anthropic_response';
 import {
   all_offered_pairs,
   CLICHE_PATTERNS,
@@ -223,8 +224,7 @@ alternate titles
         messages: msgs,
       });
 
-      const text_of = (result: Anthropic.Message) =>
-        result.content[0]?.type === 'text' ? result.content[0].text.trim() : '';
+      const text_of = (result: Anthropic.Message) => first_text(result);
 
       const first = await run_substack(messages);
       let substack_raw = text_of(first);
@@ -404,9 +404,7 @@ Return only the cleaned text. No commentary, no quotes, no preamble.`;
       messages: [{ role: 'user', content: prompt_text }],
     });
 
-    const cleaned_raw = result.content[0].type === 'text'
-      ? result.content[0].text.trim()
-      : '';
+    const cleaned_raw = first_text(result);
     const cleaned = cleaned_raw
       .replace(/\s*—\s*/g, ', ')
       .replace(/\s*–\s*/g, ', ');
