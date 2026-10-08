@@ -53,6 +53,16 @@ export async function GET() {
       // Stories table might not exist yet
     }
 
+    // Coverage of the two columns the title generators mine. Both have real
+    // import gaps: the archive upload patches content_html in a second pass,
+    // and RSS inserts subtitle as NULL without ever backfilling it.
+    const missing_content = await db.execute(
+      "SELECT COUNT(*) as count FROM posts WHERE content_html IS NULL OR trim(content_html) = ''"
+    );
+    const missing_subtitle = await db.execute(
+      "SELECT COUNT(*) as count FROM posts WHERE subtitle IS NULL OR trim(subtitle) = ''"
+    );
+
     const total_count = Number(total.rows[0].count);
     const unique_count = Number(unique.rows[0].count);
 
@@ -63,6 +73,8 @@ export async function GET() {
         total: total_count,
         unique: unique_count,
         duplicates: post_duplicates.rows.length,
+        missing_content_html: Number(missing_content.rows[0].count),
+        missing_subtitle: Number(missing_subtitle.rows[0].count),
       },
       stories: {
         total: stories_total,
