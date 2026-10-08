@@ -258,8 +258,10 @@ describe('TITLE_EXEMPLARS', () => {
 });
 
 describe('find_structural_problems', () => {
+  const NARRATIVE = 'The brake parts did not arrive. I spent the evening in the garage anyway, reorganizing a shelf I had already reorganized once that week, considering and rejecting the idea of riding about four separate times. In the end I stayed put, which is its own kind of decision, and the mountains kept right on being there without me.';
+
   const full = (n: number) =>
-    'Title: Headline Title Here\nSub Title: A real deck\n\nbody\n\nalternate titles\n\n' +
+    `Title: Headline Title Here\nSub Title: A real deck\n\n${NARRATIVE}\n\nalternate titles\n\n` +
     Array.from({ length: n }, (_, i) => `${i + 1}. Title: Option ${i + 1} Here | Sub Title: deck ${i + 1}`).join('\n');
 
   it('passes a complete response', () => {
@@ -282,9 +284,9 @@ describe('find_structural_problems', () => {
 
   it('counts an alternate with no subtitle as incomplete', () => {
     const parsed = parse_substack_output(
-      'Title: A Real Headline\nSub Title: deck\n\nalternate titles\n\n1. Title: Lonely Option Here | Sub Title: '
+      `Title: A Real Headline\nSub Title: deck\n\n${NARRATIVE}\n\nalternate titles\n\n1. Title: Lonely Option Here | Sub Title: `
     );
-    expect(find_structural_problems(parsed, 1)[0]).toContain('only 0 of 1');
+    expect(find_structural_problems(parsed, 1).join(' ')).toContain('only 0 of 1');
   });
 });
 
@@ -316,5 +318,75 @@ describe('pick_retrospective_angles', () => {
 
   it('is a different set from the single-incident angles', () => {
     expect(RETROSPECTIVE_ANGLES.some(a => TITLE_ANGLES.includes(a))).toBe(false);
+  });
+});
+
+describe('find_structural_problems — the story itself', () => {
+  const NARRATIVE =
+    'The brake parts did not arrive. I spent the evening in the garage anyway, ' +
+    'reorganizing a shelf I had already reorganized once that week, considering ' +
+    'and rejecting the idea of riding about four separate times. In the end I ' +
+    'stayed put, which is its own kind of decision, and the mountains kept right ' +
+    'on being there without me.';
+
+  const titles_only =
+    'Title: A Perfectly Good Headline\nSub Title: a perfectly good deck\n\n' +
+    'alternate titles\n\n' +
+    Array.from({ length: EXPECTED_ALTERNATES }, (_, i) =>
+      `${i + 1}. Title: Option Number ${i + 1} | Sub Title: deck ${i + 1}`
+    ).join('\n');
+
+  it('rejects titles with no story', () => {
+    const parsed = parse_substack_output(titles_only);
+    // Everything else about this response is perfect, which is exactly why it
+    // used to ship: nothing looked at whether a story existed.
+    expect(parsed.title).toBe('A Perfectly Good Headline');
+    expect(parsed.alternates).toHaveLength(EXPECTED_ALTERNATES);
+    expect(find_title_problems(parsed, [])).toEqual([]);
+
+    const problems = find_structural_problems(parsed);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('missing or truncated');
+  });
+
+  it('accepts a response with a real narrative', () => {
+    const parsed = parse_substack_output(
+      `Title: A Perfectly Good Headline\nSub Title: a deck\n\n${NARRATIVE}\n\n` +
+        'alternate titles\n\n' +
+        Array.from({ length: EXPECTED_ALTERNATES }, (_, i) =>
+          `${i + 1}. Title: Option Number ${i + 1} | Sub Title: deck ${i + 1}`
+        ).join('\n')
+    );
+    expect(find_structural_problems(parsed)).toEqual([]);
+  });
+
+  it('stops the body at the captions header', () => {
+    const parsed = parse_substack_output(
+      `Title: Headline Here\nSub Title: deck\n\n${NARRATIVE}\n\ncaptions\n\nImage 1: a caption`
+    );
+    expect(parsed.body).toContain('brake parts did not arrive');
+    expect(parsed.body).not.toContain('Image 1');
+    expect(parsed.body).not.toContain('captions');
+  });
+
+  it('does not let alternates count towards the body', () => {
+    const parsed = parse_substack_output(titles_only);
+    expect(parsed.body).toBe('');
+  });
+
+  it('excludes the headline lines from the body', () => {
+    const parsed = parse_substack_output(`Title: Headline Here\nSub Title: deck\n\n${NARRATIVE}`);
+    expect(parsed.body).not.toContain('Headline Here');
+    expect(parsed.body).not.toContain('deck');
+  });
+
+  it('takes an adjustable floor', () => {
+    const parsed = parse_substack_output('Title: Headline Here\nSub Title: deck\n\nThree words only');
+    expect(find_structural_problems(parsed, EXPECTED_ALTERNATES, 3)).not.toContainEqual(
+      expect.stringContaining('missing or truncated')
+    );
+    expect(find_structural_problems(parsed, EXPECTED_ALTERNATES, 50).join(' ')).toContain(
+      'missing or truncated'
+    );
   });
 });
