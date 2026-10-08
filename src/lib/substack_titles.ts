@@ -127,16 +127,131 @@ export const TITLE_ANGLES: string[] = [
   'use a comparison to something mundane and slightly unflattering',
 ];
 
-/** Pick `count` distinct angles at random. */
-export function pick_title_angles(count: number, rand: () => number = Math.random): string[] {
-  const pool = [...TITLE_ANGLES];
+/** Pick `count` distinct items at random, without replacement. */
+function sample_without_replacement(source: string[], count: number, rand: () => number): string[] {
+  const pool = [...source];
   const picked: string[] = [];
   const n = Math.min(count, pool.length);
   for (let i = 0; i < n; i++) {
-    const idx = Math.floor(rand() * pool.length) % pool.length;
+    const idx = Math.min(Math.floor(rand() * pool.length), pool.length - 1);
     picked.push(pool.splice(idx, 1)[0]);
   }
   return picked;
+}
+
+/** Pick `count` distinct angles at random. */
+export function pick_title_angles(count: number, rand: () => number = Math.random): string[] {
+  return sample_without_replacement(TITLE_ANGLES, count, rand);
+}
+
+/**
+ * Angles for the "On This Day" story title. Same voice as TITLE_ANGLES, wider
+ * aperture: that title spans ten years of posts, so single-incident absurdity
+ * does not fit it. These are about pattern across years.
+ */
+export const RETROSPECTIVE_ANGLES: string[] = [
+  'name the habit you clearly cannot stop repeating on this date',
+  'count the years and let the number carry the joke',
+  'name the one year that broke the pattern',
+  'treat the recurrence as a scheduled obligation nobody agreed to',
+  'name what has changed while everything around it stayed identical',
+  'describe the date itself as a recurring character with a personality',
+  'name the thing you have now failed at on this date more than once',
+  'contrast the earliest year with the latest in a single phrase',
+];
+
+/** Pick `count` distinct retrospective angles at random. */
+export function pick_retrospective_angles(count: number, rand: () => number = Math.random): string[] {
+  return sample_without_replacement(RETROSPECTIVE_ANGLES, count, rand);
+}
+
+/**
+ * Worked examples for the title field, which previously had none while the
+ * subtitle field had three. Each teaches a different mechanism, and each maps
+ * onto a different entry in TITLE_ANGLES so the abstract angles have a
+ * demonstration. Invented, not drawn from the archive.
+ *
+ * A test asserts every entry passes find_cliche_pattern and the word bound —
+ * the shipped /api/generate prompt used to offer "October 12th Strikes Again"
+ * as an example, which our own ban list rejects.
+ */
+export const TITLE_EXEMPLARS: Array<{ title: string; why: string }> = [
+  { title: 'Defeated by a Hose Clamp', why: 'understatement: the smallest obstacle is named as the victor' },
+  { title: 'Nine Dollars of Wasp Spray', why: 'an oddly precise quantity carries the whole joke' },
+  { title: 'Form 1040, Trailside', why: 'bureaucratic register misapplied to something domestic' },
+  { title: 'The Dog Filed a Complaint', why: 'an animal is the subject doing the acting' },
+  { title: 'Everything Except the Ride', why: 'names what did not happen instead of what did' },
+  { title: 'Structurally Sound, Emotionally Not', why: 'a flat self-assessment, borrowed from inspection language' },
+];
+
+/** Render the exemplars as a prompt block. */
+export function build_exemplar_block(
+  exemplars: Array<{ title: string; why: string }> = TITLE_EXEMPLARS
+): string {
+  if (exemplars.length === 0) return '';
+  return [
+    '**How good titles here actually work.** Each of these works for a different reason:',
+    '',
+    ...exemplars.map(e => `- "${e.title}" — ${e.why}`),
+    '',
+    'Do not use those examples. They show the mechanism only.',
+  ].join('\n');
+}
+
+/** Words in a title, as a person would count them. */
+export function title_word_count(title: string): number {
+  const norm = normalize_title(title);
+  return norm ? norm.split(' ').filter(Boolean).length : 0;
+}
+
+export const TITLE_MIN_WORDS = 2;
+/** The prompt asks for 2-7; code allows 8 so a one-word quibble costs no round trip. */
+export const TITLE_MAX_WORDS = 8;
+
+export const EXPECTED_ALTERNATES = 6;
+
+/**
+ * Structural completeness. Without this a truncated response is
+ * indistinguishable from a perfect one: all_offered_pairs filters out entries
+ * with empty titles, so a response missing its headline or its alternates
+ * yields zero problems and ships as clean.
+ */
+export function find_structural_problems(
+  parsed: ParsedSubstack,
+  expected_alternates: number = EXPECTED_ALTERNATES
+): string[] {
+  const problems: string[] = [];
+  if (!parsed.title.trim()) problems.push('the headline title is missing');
+  if (!parsed.subtitle.trim()) problems.push('the headline subtitle is missing');
+
+  const complete = parsed.alternates.filter(a => a.title.trim() && a.subtitle.trim());
+  if (complete.length < expected_alternates) {
+    problems.push(
+      `only ${complete.length} of ${expected_alternates} alternate title/subtitle pairs came back`
+    );
+  }
+  return problems;
+}
+
+/**
+ * Verbatim reuse of a subtitle we supplied as an example. Titles are covered by
+ * the avoid list, but nothing checks subtitles, so without this the model can
+ * lift one of the author's own subtitles word for word and nothing notices.
+ */
+export function find_subtitle_copies(
+  parsed: ParsedSubstack,
+  supplied_subtitles: string[]
+): TitleProblem[] {
+  const supplied = new Set(supplied_subtitles.map(normalize_title).filter(Boolean));
+  if (supplied.size === 0) return [];
+
+  const problems: TitleProblem[] = [];
+  for (const pair of all_offered_pairs(parsed)) {
+    if (supplied.has(normalize_title(pair.subtitle))) {
+      problems.push({ title: pair.title, reason: 'reuses a supplied example subtitle verbatim' });
+    }
+  }
+  return problems;
 }
 
 export interface ParsedSubstack {
@@ -200,21 +315,30 @@ export interface TitleProblem {
 }
 
 /**
- * Check the headline and every alternate against the cliche templates and the
- * used-title history. Returns one problem per offending title.
+ * Check the headline and every alternate for repetition and length.
+ *
+ * Cliche templates are deliberately NOT checked here. They remain in the prompt
+ * as guidance, but gating on them made the retry's accept test "fewer regex
+ * hits", which rewarded blander rewrites and discarded funnier ones that tied.
+ * Whether a title is good is not something this function can know; it only
+ * enforces structure.
  */
 export function find_title_problems(parsed: ParsedSubstack, previous: string[]): TitleProblem[] {
   const problems: TitleProblem[] = [];
   const seen_this_run: string[] = [];
 
   for (const pair of all_offered_pairs(parsed)) {
-    const cliche = find_cliche_pattern(pair.title);
-    if (cliche) {
-      problems.push({ title: pair.title, reason: `uses the overdone ${cliche} template` });
-    } else if (is_duplicate_title(pair.title, previous)) {
+    const words = title_word_count(pair.title);
+
+    if (is_duplicate_title(pair.title, previous)) {
       problems.push({ title: pair.title, reason: 'repeats a title already used on a previous post' });
     } else if (is_duplicate_title(pair.title, seen_this_run)) {
       problems.push({ title: pair.title, reason: 'is a reword of another option in this same batch' });
+    } else if (words < TITLE_MIN_WORDS || words > TITLE_MAX_WORDS) {
+      problems.push({
+        title: pair.title,
+        reason: `is ${words} ${words === 1 ? 'word' : 'words'}; needs ${TITLE_MIN_WORDS} to ${TITLE_MAX_WORDS}`,
+      });
     }
     seen_this_run.push(pair.title);
   }
