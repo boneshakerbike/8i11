@@ -55,6 +55,14 @@ interface SavedStory {
   edited_at: string | null;
 }
 
+/**
+ * Escape text for the clipboard HTML, which is also rendered into the on-page
+ * preview via dangerouslySetInnerHTML. Post titles, blurbs, and the model's
+ * intro and heading all pass through here.
+ */
+const escape_html = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 export default function OnThisDay() {
   const { data: session } = useSession();
   const date_input_ref = useRef<HTMLInputElement>(null);
@@ -218,10 +226,13 @@ export default function OnThisDay() {
   };
 
   const copy_for_substack = async (version: 'simple' | 'full') => {
-    if (!posts.length || !date) return;
+    // `date` updates optimistically ahead of fetch_posts, so copying mid-load
+    // could describe one day's posts under another day's heading.
+    if (!posts.length || !date || loading) return;
     if (version === 'full' && intro_loading) return;
 
     let intro: string | null = null;
+    let heading: string | null = null;
     if (version === 'full') {
       set_intro_loading(true);
       set_copy_status('Generating intro...');
@@ -239,6 +250,7 @@ export default function OnThisDay() {
           throw new Error(data.error || 'Intro generation failed');
         }
         intro = data.intro as string;
+        heading = (data.heading as string | undefined)?.trim() || null;
       } catch (error) {
         set_intro_loading(false);
         set_copy_status(error instanceof Error ? `Intro failed: ${error.message}` : 'Intro failed');
@@ -248,20 +260,25 @@ export default function OnThisDay() {
       set_intro_loading(false);
     }
 
-    let html = '<h2>On This Day</h2>\n';
+    // 'simple' makes no model call, so it has no generated heading to use.
+    const resolved_heading = heading || `On This Day: ${date.display}`;
+
+    let html = `<h2>${escape_html(resolved_heading)}</h2>\n`;
     if (intro) {
-      html += `<p>${intro}</p>\n`;
+      html += `<p>${escape_html(intro)}</p>\n`;
     }
     for (const post of posts) {
       if (version === 'simple') {
-        html += `<p>${post.year}: <a href="${post.url}">${post.title}</a></p>\n`;
+        html += `<p>${post.year}: <a href="${post.url}">${escape_html(post.title)}</a></p>\n`;
       } else {
-        const blurb_part = post.blurb ? ` – ${post.blurb}` : '';
-        html += `<p>${post.year}: <a href="${post.url}">${post.title}</a>${blurb_part}</p>\n`;
+        const blurb_part = post.blurb ? ` – ${escape_html(post.blurb)}` : '';
+        html += `<p>${post.year}: <a href="${post.url}">${escape_html(post.title)}</a>${blurb_part}</p>\n`;
       }
     }
     const text_lines = posts.map(p => `${p.year}: ${p.title} - ${p.url}`);
-    const text = intro ? `${intro}\n\n${text_lines.join('\n')}` : text_lines.join('\n');
+    const text = [resolved_heading, '', intro, intro ? '' : null, text_lines.join('\n')]
+      .filter(line => line !== null)
+      .join('\n');
 
     const result = await copy_to_clipboard(html, text);
     set_copy_status(result === 'failed' ? 'Copy failed' : result === 'html' ? 'Copied!' : 'Copied as text');
@@ -328,9 +345,6 @@ export default function OnThisDay() {
 
     const base_url = window.location.origin;
     const link = `${base_url}/story/${active_story_id}`;
-    const escape_html = (s: string) =>
-      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
     const html = `<h2>${escape_html(existing_story.title)}</h2>\n<p>${escape_html(existing_story.blurb)}</p>\n<p>Read more: <a href="${link}">${link}</a></p>`;
     const text = `${existing_story.title}\n\n${existing_story.blurb}\n\nRead more: ${link}`;
 

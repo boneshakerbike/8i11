@@ -5,11 +5,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { get_posts_on_date, get_post_url, save_story, save_story_audit } from '@/lib/db';
+import { get_voice_pool, get_posts_on_date, get_post_url, save_story, save_story_audit } from '@/lib/db';
 import { build_story_audit } from '@/lib/story_audit';
 import { pick_story_image_url } from '@/lib/story_image';
 import { MODELS } from '@/lib/models';
 import { first_text } from '@/lib/anthropic_response';
+import {
+  build_exemplar_block,
+  CLICHE_PATTERNS,
+  pick_retrospective_angles,
+} from '@/lib/substack_titles';
+import { build_voice_block, make_seeded_rand, sample_voice_exemplars } from '@/lib/voice_corpus';
+import { build_canon_block, build_endorsed_block } from '@/lib/canon';
 
 function stripCodeFences(text: string): string {
   let cleaned = text.trim();
@@ -55,7 +62,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { month, day } = await request.json();
+    const body = await request.json();
+    const { month, day } = body;
+    // Comparison mode: no database writes, and a seeded sampler so an A/B run
+    // shows both arms identical grounding.
+    const preview = body.preview === true;
+    const rand = typeof body.seed === 'number' ? make_seeded_rand(body.seed) : Math.random;
 
     if (!month || !day) {
       return NextResponse.json(
@@ -125,8 +137,17 @@ ADAPTIVE VOICE REFINEMENT:
 First, analyze the provided posts for recurring themes, word choices, and tonal patterns. Subtly adjust the base voice to echo these detected nuances while maintaining the core style parameters above.
 
 CONTENT STRUCTURE:
-1. Creative title incorporating the date (3-6 words total, quirky and curiosity-sparking)
-   Examples: "Why March 15th?" or "January 30th Blues" or "October 12th Strikes Again"
+1. Title: 2 to 7 words. It must come out of the SPECIFIC posts below, not out of the date.
+   Use the real nouns from those posts: the places, the gear, the animals, the thing that
+   went wrong, the habit that keeps repeating. Do not put the month or the day number in
+   the title, and do not refer to the date at all... the page already prints it directly
+   under the title. No colons. No rhyming. No alliteration for its own sake.
+
+${build_exemplar_block()}
+
+   These title shapes are worn out from overuse everywhere. Write something that is not
+   one of them:
+${CLICHE_PATTERNS.map(p => `   - ${p.name}`).join('\n')}
 2. Weave themes from posts showing evolution/consistency
 3. IMPORTANT: Include a link to EVERY post provided - no exceptions. Each URL must appear EXACTLY ONCE (no duplicates)
 4. Reflective ending with appreciative insight
@@ -141,10 +162,31 @@ FORMAT:
 - story must be HTML with <h2> title, <p> paragraphs, <a href> links
 - blurb must be plain text only, no HTML, no markdown`;
 
+    // Per-request grounding goes in the user message, never the system block:
+    // the system prompt carries cache_control, and a freshly sampled block there
+    // would invalidate the cache on every call.
+    let voice_block = '';
+    try {
+      voice_block = build_voice_block(sample_voice_exemplars(await get_voice_pool(), 16, rand));
+    } catch (e) {
+      console.error('Voice pool lookup failed:', e instanceof Error ? e.message : String(e));
+    }
+
+    const angles = pick_retrospective_angles(2, rand);
+
+    const grounding = [
+      build_endorsed_block(),
+      voice_block,
+      build_canon_block(),
+      `**Angles to try for this title.** The title spans every year below, so reach for the pattern across them:\n${angles.map(a => `- ${a}`).join('\n')}`,
+    ].filter(Boolean).join('\n\n');
+
     // User message (dynamic) - changes with each request
     const user_message = `Write a reflection for ${date_display}. Here are my posts from this date:
 
-${formatted_posts}`;
+${formatted_posts}
+
+${grounding}`;
 
     const client = new Anthropic({ apiKey: api_key });
 
@@ -182,16 +224,21 @@ ${formatted_posts}`;
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Save story to database and get shareable ID
     const date_key = `${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    const story_id = await save_story(date_key, date_display, story, blurb, posts.length, image_url);
     const audit = build_story_audit(posts.map(post => ({
       post_id: post.post_id,
       title: post.title,
       url: get_post_url(post.post_id),
       content_html: post.content_html
     })));
-    await save_story_audit(story_id, audit);
+
+    // In preview mode nothing is written — not the story, and not the audit,
+    // which would otherwise describe a story that was never persisted.
+    let story_id: string | null = null;
+    if (!preview) {
+      story_id = await save_story(date_key, date_display, story, blurb, posts.length, image_url);
+      await save_story_audit(story_id, audit);
+    }
 
     return NextResponse.json({
       success: true,
