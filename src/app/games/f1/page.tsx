@@ -74,6 +74,7 @@ export default function F1Page() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const selected_round_ref = useRef<any>(null); // mirrors selected_round without being a dep of refresh_state
   const initialized_from_url = useRef(false);
+  const active_form_ref = useRef<string | null>(null); // lets polls skip session updates while picks are being entered
 
   // Read season/round from URL params on mount (prevents "bounces to 2026" on refresh)
   useEffect(() => {
@@ -93,6 +94,8 @@ export default function F1Page() {
     if (selected_round) params.set('round', String(selected_round));
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
   }, [season, selected_round]);
+
+  useEffect(() => { active_form_ref.current = active_form; }, [active_form]);
 
   // Keep standings ref in sync for use inside refresh_state callback
   useEffect(() => { standings_ref.current = standings; }, [standings]);
@@ -174,8 +177,10 @@ export default function F1Page() {
   // Fetch season progress + roster
   const refresh_progress = useCallback(() => {
     fetch(`/api/f1/season_progress?season=${season}`)
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
+        // A failed poll keeps the last good state instead of blanking the roster and active round
+        if (!data || !Array.isArray(data.roster)) { set_roster_loaded(true); return; }
         set_roster(data.roster || []);
         set_active_round(data.roster?.length > 0 ? data.active_round : undefined);
         set_completed_rounds(data.roster?.length > 0 ? (data.completed_rounds || []) : []);
@@ -216,8 +221,8 @@ export default function F1Page() {
   // Fetch leaderboard
   const refresh_leaderboard = useCallback(() => {
     fetch(`/api/f1/leaderboard?season=${season}`)
-      .then(res => res.json())
-      .then(data => set_standings(data.standings || []))
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data && Array.isArray(data.standings)) set_standings(data.standings); })
       .catch(() => {});
   }, [season]);
 
@@ -233,10 +238,12 @@ export default function F1Page() {
   const refresh_state = useCallback(() => {
     if (!active_round || !player_name) return;
     fetch(`/api/f1/state?season=${season}&round=${active_round}&player=${encodeURIComponent(player_name)}`)
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
+        // A failed poll must not wipe the sessions, which would unmount an open prediction form
+        if (!data || !Array.isArray(data.sessions)) return;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const new_sessions: any[] = data.sessions || [];
+        const new_sessions: any[] = data.sessions;
         const prev = prev_sessions_ref.current;
         const dvrs = drivers_ref.current;
 
@@ -320,8 +327,8 @@ export default function F1Page() {
         }
 
         prev_sessions_ref.current = new_sessions;
-        // Only update weekend view sessions when viewing the active round
-        if (selected_round_ref.current === active_round) set_sessions(new_sessions);
+        // Only update weekend view sessions when viewing the active round, and not while picks are being entered
+        if (selected_round_ref.current === active_round && !active_form_ref.current) set_sessions(new_sessions);
       })
       .catch(() => {});
   }, [season, active_round, player_name, push_activity]);
@@ -342,8 +349,8 @@ export default function F1Page() {
   const refresh_viewed_round = useCallback(() => {
     if (!selected_round || !player_name) return;
     fetch(`/api/f1/state?season=${season}&round=${selected_round}&player=${encodeURIComponent(player_name)}`)
-      .then(res => res.json())
-      .then(data => { set_sessions(data.sessions || []); })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data && Array.isArray(data.sessions)) set_sessions(data.sessions); })
       .catch(() => {});
   }, [season, selected_round, player_name]);
 
