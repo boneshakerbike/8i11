@@ -6,6 +6,7 @@
 import path from 'path';
 import fs from 'fs';
 import { createClient, Client } from '@libsql/client';
+import { add_read_retry } from './retry';
 import type {
   F1RaceSchedule, F1Driver, F1DriverResult, F1SessionResult,
   F1Prediction, F1Score, F1PlayerState, SessionType, PlayerState,
@@ -20,10 +21,11 @@ let client: Client | null = null;
 function get_client(): Client {
   if (!client) {
     if (is_turso) {
-      client = createClient({
+      // Turso intermittently drops connections (ECONNRESET); retry reads so polls don't 500
+      client = add_read_retry(createClient({
         url: process.env.TURSO_DATABASE_URL!,
         authToken: process.env.TURSO_AUTH_TOKEN,
-      });
+      }));
     } else {
       const db_path = path.join(process.cwd(), 'data', 'posts.db');
       const dir = path.dirname(db_path);
