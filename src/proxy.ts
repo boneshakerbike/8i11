@@ -5,9 +5,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { safe_callback_url } from '@/lib/safe_callback';
 
 export async function proxy(request: NextRequest) {
   const token = await getToken({ req: request });
+  const path = request.nextUrl.pathname;
+
+  // /login is public, but a visitor who is already signed in goes straight on
+  // to their callbackUrl instead of seeing the form again. This uses the same
+  // getToken check as the protected routes, so the two cannot disagree and loop.
+  if (path === '/login') {
+    if (!token) return NextResponse.next();
+    const target = safe_callback_url(request.nextUrl.searchParams.get('callbackUrl'), request.nextUrl.origin);
+    return NextResponse.redirect(target);
+  }
 
   if (!token) {
     const login_url = new URL('/login', request.url);
@@ -16,7 +27,6 @@ export async function proxy(request: NextRequest) {
   }
 
   // /coach and /api/coaching/* are admin-only (non-guest).
-  const path = request.nextUrl.pathname;
   const is_coach = path === '/coach' || path.startsWith('/coach/') || path.startsWith('/api/coaching');
   if (is_coach && token.sub === 'guest') {
     if (path.startsWith('/api/')) {
@@ -29,8 +39,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Protect all routes except login, story, archive, games, weather, privacy, terms, api/auth, api/health, api/stories, api/prompts, api/oura, api/coros, and static files.
+  // Protect all routes except login, story, archive, games, weather, privacy, terms, api/auth, api/health, api/stories, api/prompts, api/oura, api/coros, the web app manifest and its icons, and static files.
+  // /login is matched separately so signed-in visitors can be sent on (see above).
   matcher: [
-    '/((?!login|story|archive|creative/archive|games|weather|privacy|terms|api/auth|api/health|api/stories|api/prompts|api/oura|api/coros|_next/static|_next/image|favicon.ico|icon.svg).*)',
+    '/login',
+    '/((?!login|story|archive|creative/archive|games|weather|privacy|terms|api/auth|api/health|api/stories|api/prompts|api/oura|api/coros|manifest.webmanifest|icons/|_next/static|_next/image|favicon.ico|icon.svg).*)',
   ],
 };
