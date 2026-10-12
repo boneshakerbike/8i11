@@ -84,7 +84,8 @@ export async function pull_coros_week(client: McpClient, today: string): Promise
 /** Most getActivityDetail calls per run; a normal day adds one to three activities. */
 export const MAX_DETAIL_CALLS = 10;
 
-const RIDE_TYPES = new Set([200, 202, 203, 204, 205, 9806]);
+// Built-in outdoor ride types; their detail includes elevation.
+const RIDE_TYPES = new Set([200, 202, 203, 204, 205]);
 
 /**
  * Ask getActivityDetail once per outdoor activity for elevation gain and loss.

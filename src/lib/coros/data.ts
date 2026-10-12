@@ -86,11 +86,12 @@ export async function ensure_coros_tables(db: Client): Promise<void> {
 }
 
 /**
- * Outdoor sports whose detail carries elevation: run, trail, track, hike,
- * climb, outdoor/e/gravel/mountain bikes, walk, and the custom outdoor type
- * one e-MTB ride was logged as.
+ * Outdoor sports whose detail can carry elevation: run, trail, track, hike,
+ * climb, outdoor/e/gravel/mountain bikes, walk. Custom sports (9800-9807,
+ * e.g. Bill's "Missoula E MTB" logged as 9806) get a generic detail with no
+ * elevation line (checked 2026-10-12), so they are not asked.
  */
-export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 205, 900, 9806] as const;
+export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 205, 900] as const;
 
 /** Activities never asked for detail yet, newest first. */
 export async function activities_needing_detail(db: Client, limit: number): Promise<Array<{ label_id: string; sport_type: number }>> {
