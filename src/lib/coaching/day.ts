@@ -20,6 +20,13 @@ export function mt_epoch_day(now: Date = new Date()): number {
   return Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
 }
 
+/** YYYY-MM-DD minus n calendar days, as YYYY-MM-DD */
+export function shift_date(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Convert a stored epoch day back to its YYYY-MM-DD calendar date */
 export function epoch_day_to_date_str(epoch_day: number): string {
   return new Date(epoch_day * DAY_MS).toISOString().split('T')[0];

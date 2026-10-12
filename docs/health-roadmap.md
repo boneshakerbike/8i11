@@ -137,9 +137,20 @@ Done in this branch; see Status.
 
 - Phase 0 (#297): COROS sign-in and read-only probe. Passed on the preview 2026-10-12; findings above.
 
+### In progress
+
+- Phase 2 (branch `claude/health-area-redesign-d8ar3d`):
+  - `src/lib/coros/parse.ts`: one parser per read tool, tested on sanitized fixtures and checked once against real output (kept out of the repo).
+  - `coros_daily` and `coros_activities` tables (merge writes, never pruned); `src/lib/coros/sync.ts` pulls the last 7 days, so a missed night heals itself. Tool errors and "text but nothing parsed" are reported, not skipped.
+  - Production stores the COROS connection under its fixed domain (`coros_origin`, from `VERCEL_PROJECT_PRODUCTION_URL`) so the nightly job finds it.
+  - Nightly job: Oura sync (moved to `src/lib/health/oura-sync.ts`), then COROS, then trends. Each step runs even if another fails; every run is logged in `health_sync_runs`.
+  - "Daily sync ran ..." line on the Coach and COROS pages (`src/components/sync_status.tsx`). It turns red if the job is over 26 hours late, a step failed, or COROS is disconnected.
+  - COROS page rebuilt on the synced data, with Sync now. The Chrome-scrape prompt, the paste box, `/api/coros/save` and the blanket `api/coros` proxy exemption are gone. `daily_metrics` reads COROS from `coros_daily`.
+  - Pending: ascent and descent per activity, once the `getActivityDetail` format is known (Bill's paste).
+
 ### Next
 
-- Phase 2: daily COROS sync (parsers, tables, cron), plus a visible "last daily sync" line so nobody needs Vercel logs to know the job ran.
+- Phase 3: coach rebuild (needs the Master SoK file, pillar targets, and the model decision).
 
 ## Regenerating the session dump
 

@@ -6,6 +6,8 @@
  * as a tool error, which is itself what the probe needs to learn.
  */
 
+import { shift_date } from '@/lib/coaching/day';
+
 interface SchemaProp {
   type?: string | string[];
   description?: string;
@@ -21,12 +23,6 @@ export interface ToolInputSchema {
 
 const types_of = (p: SchemaProp): string[] => (Array.isArray(p.type) ? p.type : p.type ? [p.type] : []);
 
-/** YYYY-MM-DD minus n days, as YYYY-MM-DD. */
-export function shift_date(date: string, n: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
 
 function format_date(date: string, prop: SchemaProp): string | number {
   const text = `${prop.description ?? ''} ${prop.pattern ?? ''}`.toLowerCase();

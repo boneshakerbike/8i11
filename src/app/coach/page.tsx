@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import NavTabs from '@/components/nav_tabs';
+import SyncStatus from '@/components/sync_status';
 import { mt_date_str, mt_epoch_day, epoch_day_to_date_str } from '@/lib/coaching/day';
 import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
@@ -715,6 +716,8 @@ export default function CoachPage() {
             </button>
           </div>
         </div>
+
+        <SyncStatus />
 
         {/* Past Sessions */}
         {showHistory && (

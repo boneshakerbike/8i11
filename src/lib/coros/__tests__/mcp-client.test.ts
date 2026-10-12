@@ -26,3 +26,19 @@ describe('COROS read-only allowlist', () => {
     expect(result.content[0]).toEqual({ type: 'text', text: 'querySleepOverview' });
   });
 });
+
+describe('coros_origin', () => {
+  it('pins production to its fixed domain so the cron finds the connection', async () => {
+    const { coros_origin } = await import('@/lib/coros/mcp-client');
+    const env = { VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: '8i11.vercel.app' };
+    expect(coros_origin('https://8i11-abc123-team.vercel.app', env)).toBe('https://8i11.vercel.app');
+    expect(coros_origin('https://8i11.vercel.app', env)).toBe('https://8i11.vercel.app');
+  });
+
+  it('keeps a preview on its own URL', async () => {
+    const { coros_origin } = await import('@/lib/coros/mcp-client');
+    expect(coros_origin('https://8i11-git-x-team.vercel.app', { VERCEL_ENV: 'preview', VERCEL_PROJECT_PRODUCTION_URL: '8i11.vercel.app' }))
+      .toBe('https://8i11-git-x-team.vercel.app');
+    expect(coros_origin('http://localhost:3000', {})).toBe('http://localhost:3000');
+  });
+});

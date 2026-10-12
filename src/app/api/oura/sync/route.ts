@@ -6,14 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import {
-  get_oura_tokens,
-  refresh_oura_access_token,
-  is_wellness_cached,
-  save_wellness_cache,
-} from '@/lib/db';
-import type { OuraTokens, WellnessSnapshot } from '@/lib/db';
-import { primary_sleep } from '@/lib/health/oura-derive';
+import { sync_oura } from '@/lib/health/oura-sync';
 
 async function require_auth(request: NextRequest): Promise<NextResponse | null> {
   const token = await getToken({ req: request });
@@ -29,197 +22,26 @@ async function require_auth(request: NextRequest): Promise<NextResponse | null> 
   return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 }
 
-async function oura_fetch(url: string, tokens: OuraTokens): Promise<Response> {
-  return fetch(url, {
-    headers: { 'Authorization': `Bearer ${tokens.access_token}` },
-  });
-}
-
-interface EndpointDef {
-  key: string;
-  path: string;
-  use_activity_params?: boolean;
-}
-
-const ENDPOINTS: EndpointDef[] = [
-  // Inclusive end_date
-  { key: 'daily_sleep', path: 'daily_sleep' },
-  { key: 'daily_readiness', path: 'daily_readiness' },
-  { key: 'daily_stress', path: 'daily_stress' },
-  { key: 'daily_resilience', path: 'daily_resilience' },
-  { key: 'daily_cardiovascular_age', path: 'daily_cardiovascular_age' },
-  { key: 'vo2_max', path: 'vo2_max' },
-  { key: 'daily_spo2', path: 'daily_spo2' },
-  { key: 'sleep_time', path: 'sleep_time' },
-  // Exclusive end_date (need +1 day)
-  { key: 'daily_activity', path: 'daily_activity', use_activity_params: true },
-  { key: 'sleep_detail', path: 'sleep', use_activity_params: true },
-  { key: 'heartrate', path: 'heartrate', use_activity_params: true },
-  { key: 'workouts', path: 'workout', use_activity_params: true },
-  { key: 'sessions', path: 'session', use_activity_params: true },
-];
-
-// Endpoints that return items with a "day" field for grouping
-const ARRAY_ENDPOINTS = new Set([
-  'sleep_detail', 'heartrate', 'workouts', 'sessions'
-]);
-
 export async function POST(request: NextRequest) {
   const auth_error = await require_auth(request);
   if (auth_error) return auth_error;
 
   try {
-    let tokens = await get_oura_tokens();
-    if (!tokens) {
+    const body = await request.json().catch(() => ({}));
+    const result = await sync_oura({ days: body.days, force: body.force === true });
+    if (!result.connected) {
       return NextResponse.json({ error: 'Oura not connected', connected: false }, { status: 404 });
     }
-
-    if (tokens.expires_at < Math.floor(Date.now() / 1000) + 60) {
-      tokens = await refresh_oura_access_token();
+    if (result.synced === 0 && result.errors.length === 0 && result.skipped > 0) {
+      return NextResponse.json({ success: true, synced: 0, skipped: result.skipped, message: 'All dates already cached' });
     }
-
-    const body = await request.json().catch(() => ({}));
-    const days = Math.min(Math.max(body.days || 7, 1), 30);
-    const force = body.force === true;
-
-    // Calculate date range (exclude today MT — data still accumulating)
-    const now_mt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Denver' }));
-    const today = now_mt;
-    const end_date = new Date(today);
-    end_date.setDate(end_date.getDate() - 1);
-    const start_date = new Date(end_date);
-    start_date.setDate(start_date.getDate() - days + 1);
-
-    const start_str = start_date.toISOString().split('T')[0];
-    const end_str = end_date.toISOString().split('T')[0];
-
-    // Check which dates need syncing
-    const dates_to_sync: string[] = [];
-    const skipped: string[] = [];
-    const d = new Date(start_date);
-    while (d <= end_date) {
-      const date_str = d.toISOString().split('T')[0];
-      if (force || !(await is_wellness_cached(date_str))) {
-        dates_to_sync.push(date_str);
-      } else {
-        skipped.push(date_str);
-      }
-      d.setDate(d.getDate() + 1);
-    }
-
-    if (dates_to_sync.length === 0) {
-      return NextResponse.json({
-        success: true,
-        synced: 0,
-        skipped: skipped.length,
-        message: 'All dates already cached',
-      });
-    }
-
-    // Fetch date range from Oura (one call per endpoint for the full range)
-    const base = 'https://api.ouraring.com/v2/usercollection';
-    const params = `start_date=${start_str}&end_date=${end_str}`;
-
-    // Activity needs +1 day on end_date
-    const activity_end = new Date(end_date);
-    activity_end.setDate(activity_end.getDate() + 1);
-    const activity_params = `start_date=${start_str}&end_date=${activity_end.toISOString().split('T')[0]}`;
-
-    const endpoint_data: Record<string, unknown[]> = {};
-    const errors: string[] = [];
-
-    const results = await Promise.allSettled(
-      ENDPOINTS.map(async (ep) => {
-        const q = ep.use_activity_params ? activity_params : params;
-        const res = await oura_fetch(`${base}/${ep.path}?${q}`, tokens);
-        if (!res.ok) {
-          if ([401, 403, 404].includes(res.status)) return { key: ep.key, data: [] };
-          throw new Error(`${ep.key}: ${res.status}`);
-        }
-        const json = await res.json();
-        return { key: ep.key, data: json.data || [] };
-      })
-    );
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        endpoint_data[result.value.key] = result.value.data;
-      } else {
-        errors.push(String(result.reason));
-      }
-    }
-
-    // Group data by date and save each day
-    let synced = 0;
-    for (const date_str of dates_to_sync) {
-      const find_for_date = (key: string) => {
-        const items = endpoint_data[key] || [];
-        // Daily endpoints: match by "day" field
-        // Array endpoints (heartrate): match by "day" or "timestamp" date
-        if (ARRAY_ENDPOINTS.has(key)) {
-          return items.filter((item: unknown) => {
-            const r = item as Record<string, unknown>;
-            if (r.day === date_str) return true;
-            if (typeof r.timestamp === 'string') return (r.timestamp as string).startsWith(date_str);
-            return false;
-          });
-        }
-        return items.find((item: unknown) => (item as Record<string, unknown>).day === date_str) || null;
-      };
-
-      const daily_sleep = find_for_date('daily_sleep') as Record<string, unknown> | null;
-      const daily_readiness = find_for_date('daily_readiness') as Record<string, unknown> | null;
-      const daily_activity = find_for_date('daily_activity') as Record<string, unknown> | null;
-      const daily_stress = find_for_date('daily_stress') as Record<string, unknown> | null;
-      const sleep_detail = find_for_date('sleep_detail') as Record<string, unknown>[] | null;
-      const daily_spo2 = find_for_date('daily_spo2') as Record<string, unknown> | null;
-      // HRV and resting HR come from the night, not whichever period is first (a nap)
-      const night = primary_sleep(sleep_detail);
-
-      const snapshot: WellnessSnapshot = {
-        date: date_str,
-        sleep_score: (daily_sleep?.score as number) ?? null,
-        readiness_score: (daily_readiness?.score as number) ?? null,
-        activity_score: (daily_activity?.score as number) ?? null,
-        stress_high: (daily_stress?.stress_high as number) ?? null,
-        recovery_high: (daily_stress?.recovery_high as number) ?? null,
-        hrv_average: (night?.average_hrv as number) ?? null,
-        resting_hr: (night?.lowest_heart_rate as number) ?? null,
-        spo2_average: ((daily_spo2?.spo2_percentage as Record<string, unknown>)?.average as number) ?? null,
-        steps: (daily_activity?.steps as number) ?? null,
-        active_calories: (daily_activity?.active_calories as number) ?? null,
-        daily_sleep,
-        daily_readiness,
-        daily_activity,
-        daily_stress,
-        daily_resilience: find_for_date('daily_resilience') as Record<string, unknown> | null,
-        daily_cardiovascular_age: find_for_date('daily_cardiovascular_age') as Record<string, unknown> | null,
-        daily_spo2,
-        sleep_detail,
-        heartrate: find_for_date('heartrate') as unknown,
-        vo2_max: find_for_date('vo2_max') as Record<string, unknown> | null,
-        workouts: find_for_date('workouts') as unknown,
-        sessions: find_for_date('sessions') as unknown,
-        sleep_time: find_for_date('sleep_time') as Record<string, unknown> | null,
-        fetched_at: new Date().toISOString(),
-      };
-
-      try {
-        await save_wellness_cache(snapshot);
-        synced++;
-      } catch (err) {
-        errors.push(`Cache save failed for ${date_str}: ${err}`);
-      }
-    }
-
     return NextResponse.json({
       success: true,
-      synced,
-      skipped: skipped.length,
-      errors: errors.length > 0 ? errors : undefined,
-      range: { start: start_str, end: end_str },
+      synced: result.synced,
+      skipped: result.skipped,
+      errors: result.errors.length > 0 ? result.errors : undefined,
+      range: result.range,
     });
-
   } catch (error) {
     console.error('Oura sync error:', error);
     return NextResponse.json(

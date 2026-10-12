@@ -7,16 +7,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { is_owner_or_preview_admin } from '@/lib/owner';
-import { describe_coros_error, start_coros_authorization } from '@/lib/coros/mcp-client';
+import { coros_origin, describe_coros_error, start_coros_authorization } from '@/lib/coros/mcp-client';
 
-const PAGE = '/health/coros/mcp';
+const PAGE = '/health/coros';
 
 export async function GET(request: NextRequest) {
   if (!is_owner_or_preview_admin(await getToken({ req: request }))) {
     return NextResponse.json({ error: 'Owner only' }, { status: 403 });
   }
 
-  const origin = request.nextUrl.origin;
+  // Production always connects under its fixed domain (see coros_origin), so the
+  // state cookie must be set there too.
+  const origin = coros_origin(request.nextUrl.origin);
+  if (origin !== request.nextUrl.origin) return NextResponse.redirect(`${origin}/api/coros/authorize`);
+
   const state = crypto.randomUUID().replaceAll('-', '');
 
   try {
