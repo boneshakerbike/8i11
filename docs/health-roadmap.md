@@ -56,11 +56,15 @@ CAUTION on seeding the core: Bill's studies live in `My Drive/Health/` and there
 
 ### Phase 0: Prove COROS access (gate)
 
-COROS documents ChatGPT, Codex and Claude as clients. It is unconfirmed that it accepts our own OAuth client (dynamic registration plus our callback URL). Test on a Vercel preview; the Claude cloud sandbox cannot reach mcp.coros.com.
+COROS documents ChatGPT, Codex and Claude as clients. It is unconfirmed that it accepts our own OAuth client (dynamic registration plus our callback URL). The Claude cloud sandbox cannot reach mcp.coros.com, so the test runs on a Vercel preview.
 
-- `src/lib/coros/mcp-client.ts` with the official `@modelcontextprotocol/sdk` client and an OAuth provider backed by a `coros_tokens` table (pattern: `oura_tokens`).
-- `/api/coros/authorize` and `/api/coros/callback` (pattern: the Oura routes), owner-only via `is_owner_token`.
-- Save 7 days of raw read-tool responses as test fixtures.
+- `src/lib/coros/mcp-client.ts`: official `@modelcontextprotocol/sdk` client against the US server (`https://mcpus.coros.com/mcp`, override with `COROS_MCP_URL`). The SDK's `auth()` does discovery, registration, PKCE and refresh.
+- `src/lib/coros/store.ts` and `oauth-provider.ts`: OAuth state in a `coros_oauth` table, one row per site origin, because production and each preview register their own callback and share one database.
+- Read-only allowlist `COROS_READ_TOOLS`. Write tools are refused before reaching COROS.
+- Routes: `/api/coros/authorize`, `/api/coros/callback` (CSRF state cookie), `/api/coros/disconnect`, `/api/coros/mcp` (status, 7-day sample, single call).
+- Test page: `/health/coros/mcp`.
+- **Test path:** sign in on the branch preview with the Admin PIN. `is_owner_or_preview_admin` (`src/lib/owner.ts`) accepts that session only when `VERCEL_ENV === 'preview'`; production stays GitHub-owner only.
+- **Go:** sign-in completes and the sample returns data. Save the sample output as fixtures for Phase 2.
 - **No-go fallback:** a daily Claude Routine with the COROS connector calls the read tools and POSTs JSON to an owner-secret ingest route.
 
 ### Phase 1: Foundation fixes
@@ -110,7 +114,7 @@ Done in this branch; see Status.
 ### Done
 
 - Earlier: mobile layout and collapsible metrics (#240), tap selectors (#244), Mountain Time day boundary (#248), in-progress chat survives refresh (#262).
-- Phase 1 (branch `claude/health-area-redesign-d8ar3d`):
+- Phase 1 (#296):
   - Daily trends cron reaches its route. The proxy redirected it to `/login` because cron requests have no session; it now passes on the `CRON_SECRET` bearer alone, for that exact path (`src/lib/cron_auth.ts`, `src/proxy.ts`). The route fails closed if `CRON_SECRET` is unset.
   - `daily_metrics` writes merge instead of replace (`DAILY_METRICS_MERGE_SQL`): a null never erases a saved value, so the cron no longer blanks session inputs.
   - `daily_metrics` is no longer pruned after 365 days.
@@ -118,9 +122,15 @@ Done in this branch; see Status.
   - Removed dead code: Oura personal-info helpers, `get_wellness_scores`, `getMetricByColumn`, `/api/coaching/backfill`, orphan `/health/wellness`.
   - CI runs `npx vitest run`.
 
+- Phase 1 merged in #296 (2026-10-12). A calendar reminder checks the first cron run on 2026-10-13.
+
+### In progress
+
+- Phase 0: code built, awaiting Bill's preview test (Admin PIN, Connect COROS, Run 7-day sample, paste the output).
+
 ### Next
 
-- Phase 0, then Phase 2.
+- Phase 2, once Phase 0 passes.
 
 ## Regenerating the session dump
 
