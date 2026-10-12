@@ -11,6 +11,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import NavTabs from '@/components/nav_tabs'
 import SyncStatus from '@/components/sync_status'
+import { strength_kind } from '@/lib/coros/classify'
 
 interface CorosDay {
   date: string
@@ -42,6 +43,9 @@ interface CorosActivity {
   descent_m: number | null
   location: string | null
   training_focus: string | null
+  exercises: string[] | null
+  working_sets: number | null
+  loaded_sets: number | null
 }
 
 interface CorosData {
@@ -64,6 +68,12 @@ const short_date = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(
 /** COROS names custom sports "Sport(9806)"; the location label Bill gave it reads better. */
 const activity_name = (a: CorosActivity) =>
   /^Sport\(\d+\)$/.test(a.sport_name) && a.location ? a.location : a.sport_name
+
+const STRENGTH_LABEL = { heavy: 'Heavy strength', mobility: 'Mobility' } as const
+
+/** The first few exercises, then how many more. */
+const exercise_line = (names: string[] | null) =>
+  !names?.length ? null : names.length <= 4 ? names.join(', ') : `${names.slice(0, 4).join(', ')} +${names.length - 4} more`
 
 const btn = 'text-sm px-3 py-2 rounded border border-white/15 hover:border-cyan-400/40 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -189,7 +199,10 @@ function CorosContent() {
             <div className="px-3 py-2 text-sm text-cyan-400 border-b border-white/10">Activities</div>
             <ul className="divide-y divide-white/5 text-sm">
               {data.activities.map(a => {
+                const kind = strength_kind(a)
+                const exercises = exercise_line(a.exercises)
                 const parts = [
+                  kind ? STRENGTH_LABEL[kind] : '',
                   clock(a.duration_s),
                   miles(a.distance_m),
                   a.sets != null ? `${a.sets} sets` : '',
@@ -205,6 +218,7 @@ function CorosContent() {
                       <span className="text-xs text-gray-500 whitespace-nowrap">{short_date(a.date)}</span>
                     </div>
                     <div className="text-xs text-gray-400">{parts.join(' · ')}</div>
+                    {exercises && <div className="text-xs text-gray-500">{exercises}</div>}
                   </li>
                 )
               })}

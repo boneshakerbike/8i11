@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { is_interval_session } from '@/lib/coros/classify';
+import { is_interval_session, strength_kind } from '@/lib/coros/classify';
 
 describe('is_interval_session', () => {
   it('does not count an easy base ride (Oct 10: focus Base, anaerobic 1.6)', () => {
@@ -18,5 +18,21 @@ describe('is_interval_session', () => {
 
   it('does not count a ride with no intensity data (custom sports)', () => {
     expect(is_interval_session({ anaerobic_te: null, training_focus: null })).toBe(false);
+  });
+});
+
+describe('strength_kind', () => {
+  it('calls a stretching or bodyweight session mobility (Oct 8: 17 sets, none loaded)', () => {
+    expect(strength_kind({ working_sets: 17, loaded_sets: 0 })).toBe('mobility');
+  });
+
+  it('calls 6 or more loaded sets heavy', () => {
+    expect(strength_kind({ working_sets: 8, loaded_sets: 6 })).toBe('heavy');
+    expect(strength_kind({ working_sets: 8, loaded_sets: 5 })).toBe('mobility');
+  });
+
+  it('does not guess before the exercises are read, or when COROS recorded none', () => {
+    expect(strength_kind({ working_sets: null, loaded_sets: null })).toBeNull();
+    expect(strength_kind({ working_sets: 0, loaded_sets: 0 })).toBeNull();
   });
 });

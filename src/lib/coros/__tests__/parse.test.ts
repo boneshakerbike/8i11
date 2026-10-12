@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clock_seconds, duration_text_min, iso_date, parse_daily_health, parse_fitness, parse_recovery,
-  parse_resting_hr, parse_sleep_hrv, parse_sport_records, parse_training_load, tool_text,
+  parse_resting_hr, parse_sleep_hrv, parse_sport_records, parse_strength_laps, parse_training_load, tool_text,
 } from '@/lib/coros/parse';
 import * as F from './fixtures';
 
@@ -163,5 +163,56 @@ describe('parse_activity_detail', () => {
   it('returns null when the detail has none of these lines', async () => {
     const { parse_activity_detail } = await import('@/lib/coros/parse');
     expect(parse_activity_detail('Strength Activity Details\nSets: 12')).toBeNull();
+  });
+});
+
+describe('parse_strength_laps', () => {
+  it('reads exercises and sets from the summary rows, skipping Rest', () => {
+    expect(parse_strength_laps(F.STRENGTH_LAPS_MOBILITY)).toEqual({
+      exercises: ['Hamstring Stretch', 'Bird Dog', 'Cat Cow'],
+      working_sets: 4,
+      loaded_sets: 0,
+    });
+  });
+
+  it('counts sets done with added weight', () => {
+    expect(parse_strength_laps(F.STRENGTH_LAPS_HEAVY)).toEqual({
+      exercises: ['Goblet Squat', 'Romanian Deadlift', 'Dead Bug'],
+      working_sets: 8,
+      loaded_sets: 6,
+    });
+  });
+
+  it('counts a set as loaded when only its effort rows carry the weight', () => {
+    const data = JSON.parse(F.STRENGTH_LAPS_HEAVY);
+    for (const lap of data.lapGroups[0].laps) if (lap.sets > 0) lap.weight = 0;
+    expect(parse_strength_laps(JSON.stringify(data))?.loaded_sets).toBe(6);
+  });
+
+  it('lists an exercise done twice once', () => {
+    const data = JSON.parse(F.STRENGTH_LAPS_MOBILITY);
+    data.lapGroups[0].laps.push({ exerciseNameKey: 'Bird Dog', sets: 1, weight: 0 });
+    expect(parse_strength_laps(JSON.stringify(data))).toMatchObject({
+      exercises: ['Hamstring Stretch', 'Bird Dog', 'Cat Cow'],
+      working_sets: 5,
+    });
+  });
+
+  it('treats the 65535 placeholder as no weight', () => {
+    const data = JSON.parse(F.STRENGTH_LAPS_MOBILITY);
+    for (const lap of data.lapGroups[0].laps) lap.weight = 65535;
+    expect(parse_strength_laps(JSON.stringify(data))?.loaded_sets).toBe(0);
+  });
+
+  it('returns an empty session when COROS recorded no laps', () => {
+    expect(parse_strength_laps('{"lapGroups":[]}')).toEqual({ exercises: [], working_sets: 0, loaded_sets: 0 });
+  });
+
+  it('returns null when the shape differs (a format change)', () => {
+    expect(parse_strength_laps('Strength Activity Details\nSets: 12')).toBeNull();
+    expect(parse_strength_laps('{"laps":[]}')).toBeNull();
+    expect(parse_strength_laps('{"lapGroups":[{"rows":[]}]}')).toBeNull();
+    // Laps but no summary row: the rule the counts rely on no longer holds
+    expect(parse_strength_laps('{"lapGroups":[{"laps":[{"exerciseNameKey":"Squat","sets":0,"weight":20}]}]}')).toBeNull();
   });
 });

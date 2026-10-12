@@ -5,7 +5,8 @@ import { pull_coros_week } from '@/lib/coros/sync';
 import { get_coros_activities, get_coros_days, save_coros_activities, save_coros_days } from '@/lib/coros/data';
 import * as F from './fixtures';
 
-type Reply = { text: string; isError?: boolean };
+// raw: sent as is, like queryActivityLapData's JSON; otherwise wrapped in a JSON string literal like the text tools
+type Reply = { text: string; isError?: boolean; raw?: boolean };
 
 function fake_mcp(replies: Record<string, Reply>, calls: Array<{ name: string; args: unknown }> = []): McpClient {
   return {
@@ -89,7 +90,10 @@ describe('coros tables', () => {
 describe('fill_activity_details', () => {
   const NO_ELEVATION = 'Walk Activity Details\nWorkout Time: 0:16:40';
 
-  async function setup(detail_for: (label: string) => Reply) {
+  const LAPS = (text: string): Reply => ({ text, raw: true });
+  const label_of = (c: { args: unknown }) => (c.args as { labelId: string }).labelId;
+
+  async function setup(detail_for: (label: string, tool: string) => Reply) {
     const { fill_activity_details } = await import('@/lib/coros/sync');
     const db = createClient({ url: ':memory:' });
     const pull = await pull_coros_week(fake_mcp(ALL), '2026-01-03');
@@ -98,21 +102,27 @@ describe('fill_activity_details', () => {
     const client = {
       callTool: async ({ name, arguments: args }: { name: string; arguments: { labelId: string } }) => {
         calls.push({ name, args });
-        const r = detail_for(args.labelId);
-        return { content: [{ type: 'text', text: JSON.stringify(r.text) }], isError: r.isError ?? false };
+        const r = detail_for(args.labelId, name);
+        return { content: [{ type: 'text', text: r.raw ? r.text : JSON.stringify(r.text) }], isError: r.isError ?? false };
       },
     } as unknown as McpClient;
     return { fill_activity_details, db, client, calls };
   }
 
-  it('asks built-in outdoor activities once, skips strength and custom sports, stores ascent and descent', async () => {
-    const { fill_activity_details, db, client, calls } = await setup(label =>
-      label === '100000000000000003' ? { text: NO_ELEVATION } : { text: F.ACTIVITY_DETAIL });
+  it('asks each outdoor activity and strength session once, skips custom sports, stores what they had', async () => {
+    const { fill_activity_details, db, client, calls } = await setup((label, tool) =>
+      tool === 'queryActivityLapData' ? LAPS(F.STRENGTH_LAPS_MOBILITY)
+        : label === '100000000000000003' ? { text: NO_ELEVATION } : { text: F.ACTIVITY_DETAIL });
 
     const first = await fill_activity_details(client, db);
-    // 001 strength and 004 custom Sport(9806) are never asked
-    expect(calls.map(c => (c.args as { labelId: string }).labelId).sort()).toEqual(['100000000000000002', '100000000000000003']);
-    expect(first).toEqual({ filled: 1, warnings: [] });
+    // 004 custom Sport(9806) is never asked; the 402 strength session gets the lap tool
+    expect(calls.map(c => `${c.name} ${label_of(c)}`).sort()).toEqual([
+      'getActivityDetail 100000000000000002',
+      'getActivityDetail 100000000000000003',
+      'queryActivityLapData 100000000000000001',
+    ]);
+    expect(calls.find(c => c.name === 'queryActivityLapData')?.args).toEqual({ labelId: '100000000000000001', sportType: 402 });
+    expect(first).toEqual({ filled: 1, strength: 1, warnings: [] });
 
     const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
     expect(acts.find(a => a.sport_type === 204)).toMatchObject({ ascent_m: 1200, descent_m: 1250 });
@@ -120,10 +130,14 @@ describe('fill_activity_details', () => {
     expect(acts.find(a => a.sport_type === 9806)).toMatchObject({ ascent_m: null, descent_m: null });
 
     expect(acts.find(a => a.sport_type === 204)).toMatchObject({ anaerobic_te: 1.0, training_focus: 'Base' });
+    expect(acts.find(a => a.sport_type === 402)).toMatchObject({
+      exercises: ['Hamstring Stretch', 'Bird Dog', 'Cat Cow'], working_sets: 4, loaded_sets: 0,
+    });
+    expect(acts.find(a => a.sport_type === 204)).toMatchObject({ exercises: null, working_sets: null, loaded_sets: null });
 
     // Second run: everything was asked once already, a walk without elevation included
     calls.length = 0;
-    expect(await fill_activity_details(client, db)).toEqual({ filled: 0, warnings: [] });
+    expect(await fill_activity_details(client, db)).toEqual({ filled: 0, strength: 0, warnings: [] });
     expect(calls).toHaveLength(0);
   });
 
@@ -131,16 +145,17 @@ describe('fill_activity_details', () => {
     const { fill_activity_details, db, client, calls } = await setup(() => ({ text: F.ACTIVITY_DETAIL }));
     // Simulate a ride read before training effect was parsed (version 1: fetched, no version)
     await db.execute("UPDATE coros_activities SET detail_fetched_at = 1, ascent_m = 1200 WHERE label_id = '100000000000000002'");
-    await db.execute("UPDATE coros_activities SET detail_fetched_at = 1, detail_version = 2 WHERE label_id = '100000000000000003'");
+    await db.execute("UPDATE coros_activities SET detail_fetched_at = 1, detail_version = 2 WHERE label_id IN ('100000000000000001', '100000000000000003')");
 
     await fill_activity_details(client, db);
-    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000002']);
+    expect(calls.map(label_of)).toEqual(['100000000000000002']);
     const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
     expect(acts.find(a => a.label_id === '100000000000000002')).toMatchObject({ training_focus: 'Base', ascent_m: 1200 });
   });
 
   it('warns when a built-in ride comes back without elevation, and retries a failed call next run', async () => {
-    const { fill_activity_details, db, client, calls } = await setup(label => {
+    const { fill_activity_details, db, client, calls } = await setup((label, tool) => {
+      if (tool === 'queryActivityLapData') return LAPS(F.STRENGTH_LAPS_MOBILITY);
       if (label === '100000000000000002') return { text: NO_ELEVATION };
       if (label === '100000000000000003') return { text: 'busy', isError: true };
       return { text: F.ACTIVITY_DETAIL };
@@ -154,6 +169,41 @@ describe('fill_activity_details', () => {
 
     calls.length = 0;
     await fill_activity_details(client, db);
-    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000003']);
+    expect(calls.map(label_of)).toEqual(['100000000000000003']);
+  });
+
+  it('stores a heavy session\'s loaded sets', async () => {
+    const { fill_activity_details, db, client } = await setup((_label, tool) =>
+      tool === 'queryActivityLapData' ? LAPS(F.STRENGTH_LAPS_HEAVY) : { text: F.ACTIVITY_DETAIL });
+    await fill_activity_details(client, db);
+    const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
+    expect(acts.find(a => a.sport_type === 402)).toMatchObject({
+      exercises: ['Goblet Squat', 'Romanian Deadlift', 'Dead Bug'], working_sets: 8, loaded_sets: 6,
+    });
+  });
+
+  it('reports unreadable lap data once as a format change, and retries a failed lap call next run', async () => {
+    let lap_reply: Reply = LAPS('Strength Activity Details\nSets: 12');
+    const { fill_activity_details, db, client, calls } = await setup((_label, tool) =>
+      tool === 'queryActivityLapData' ? lap_reply : { text: F.ACTIVITY_DETAIL });
+
+    const first = await fill_activity_details(client, db);
+    expect(first.warnings).toEqual(['queryActivityLapData 100000000000000001: exercises not readable (format change?)']);
+    const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
+    expect(acts.find(a => a.sport_type === 402)).toMatchObject({ exercises: null, working_sets: null, loaded_sets: null });
+
+    // Marked read: not asked again, so the warning shows once
+    calls.length = 0;
+    expect((await fill_activity_details(client, db)).warnings).toEqual([]);
+    expect(calls).toHaveLength(0);
+
+    // A failed call is not marked read
+    await db.execute("UPDATE coros_activities SET detail_version = NULL, detail_fetched_at = NULL WHERE label_id = '100000000000000001'");
+    lap_reply = { text: 'busy', isError: true };
+    expect((await fill_activity_details(client, db)).warnings).toEqual(['queryActivityLapData: busy']);
+    lap_reply = LAPS(F.STRENGTH_LAPS_MOBILITY);
+    calls.length = 0;
+    await fill_activity_details(client, db);
+    expect(calls.map(c => `${c.name} ${label_of(c)}`)).toEqual(['queryActivityLapData 100000000000000001']);
   });
 });

@@ -21,3 +21,23 @@ export function is_interval_session(a: Pick<CorosActivityDetail, 'anaerobic_te' 
   if (a.anaerobic_te != null && a.anaerobic_te >= INTERVAL_ANAEROBIC_TE) return true;
   return /vo2|threshold|anaerobic|interval|speed|power/i.test(a.training_focus ?? '');
 }
+
+/** COROS sport type for strength sessions (lifting, yoga, Pilates and rehab alike). */
+export const STRENGTH_SPORT_TYPE = 402;
+
+/** Loaded working sets that make a strength session heavy. */
+export const HEAVY_LOADED_SETS = 6;
+
+export type StrengthKind = 'heavy' | 'mobility';
+
+/**
+ * Heavy strength (framework Lever 3: heavy lifting 3x a week) or mobility
+ * (yoga, Pilates, rehab). Heavy means at least 6 working sets with added
+ * weight, e.g. 3 lifts x 2 sets; a stretching or bodyweight session has none.
+ * Null until the exercises are read, or when COROS recorded none. To confirm
+ * on Bill's first real heavy session.
+ */
+export function strength_kind(a: { working_sets: number | null; loaded_sets: number | null }): StrengthKind | null {
+  if (a.loaded_sets == null || !a.working_sets) return null;
+  return a.loaded_sets >= HEAVY_LOADED_SETS ? 'heavy' : 'mobility';
+}

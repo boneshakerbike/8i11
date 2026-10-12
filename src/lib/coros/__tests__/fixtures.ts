@@ -131,3 +131,60 @@ Variation Index: 655.35
 Aerobic TE: 4.0
 Anaerobic TE: 1.0
 Training Focus: Base`;
+
+/**
+ * queryActivityLapData for a strength session (labelId + sportType 402). Same
+ * JSON shape as the real reply: effort and rest rows (sets 0), then one
+ * summary row per exercise (sets > 0), then a "Rest" summary row.
+ * Row: [exercise, sets, reps, seconds, weight].
+ */
+type LapRow = [string, number, number, number, number];
+const strength_laps = (label_id: string, rows: LapRow[]) => JSON.stringify({
+  source: 'activityDetail', labelId: label_id, sportType: 402, mode: 23, subMode: 2,
+  columns: [
+    { name: 'lapIndex', label: '圈数' }, { name: 'exerciseNameKey', label: '动作名称' }, { name: 'sets', label: '组数' },
+    { name: 'reps', label: '次数' }, { name: 'time', label: '时间' }, { name: 'totalLength', label: '累计时间' },
+    { name: 'weight', label: '强度' }, { name: 'avgHr', label: '平均心率' }, { name: 'maxHr', label: '最大心率' },
+    { name: 'calories', label: '卡路里' }, { name: 'bodyTemperature', label: '体温' },
+  ],
+  lapGroups: [{
+    type: 2, lapDistance: 100000, fastLapIndexList: [],
+    laps: rows.map(([exerciseNameKey, sets, reps, time, weight], i) => ({
+      lapIndex: i + 1, exerciseNameKey, sets, reps, time, totalLength: time, weight,
+      avgHr: 80, maxHr: 90, calories: 10000, bodyTemperature: 0,
+    })),
+  }],
+  sportDataDetails: [],
+});
+
+/** Stretching and bodyweight work, no added weight (like a yoga or rehab session). */
+export const STRENGTH_LAPS_MOBILITY = strength_laps('100000000000000001', [
+  ['Hamstring Stretch', 0, 3, 60, 0],
+  ['Hamstring Stretch', 0, 0, 10, 0],
+  ['Hamstring Stretch', 0, 3, 60, 0],
+  ['Hamstring Stretch', 0, 0, 10, 0],
+  ['Hamstring Stretch', 2, 6, 120, 0],
+  ['Rest', 2, 0, 20, 0],
+  ['Bird Dog', 0, 10, 90, 0],
+  ['Bird Dog', 1, 10, 90, 0],
+  ['Rest', 1, 0, 10, 0],
+  ['Cat Cow', 0, 0, 45, 0],
+  ['Cat Cow', 1, 0, 45, 0],
+]);
+
+/** Loaded lifts: 3 + 3 weighted sets, plus 2 bodyweight core sets. */
+export const STRENGTH_LAPS_HEAVY = strength_laps('100000000000000001', [
+  ['Goblet Squat', 0, 8, 40, 16],
+  ['Goblet Squat', 0, 8, 40, 16],
+  ['Goblet Squat', 0, 8, 40, 16],
+  ['Goblet Squat', 3, 24, 120, 16],
+  ['Rest', 3, 0, 180, 0],
+  ['Romanian Deadlift', 0, 6, 35, 40],
+  ['Romanian Deadlift', 0, 6, 35, 40],
+  ['Romanian Deadlift', 0, 6, 35, 40],
+  ['Romanian Deadlift', 3, 18, 105, 40],
+  ['Rest', 3, 0, 180, 0],
+  ['Dead Bug', 0, 10, 45, 0],
+  ['Dead Bug', 0, 10, 45, 0],
+  ['Dead Bug', 2, 20, 90, 0],
+]);
