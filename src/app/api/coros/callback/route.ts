@@ -7,12 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { is_owner_or_preview_admin } from '@/lib/owner';
-import { describe_coros_error, finish_coros_authorization } from '@/lib/coros/mcp-client';
+import { coros_origin, describe_coros_error, finish_coros_authorization } from '@/lib/coros/mcp-client';
 
-const PAGE = '/health/coros/mcp';
+const PAGE = '/health/coros';
 
 export async function GET(request: NextRequest) {
-  const origin = request.nextUrl.origin;
+  const origin = coros_origin(request.nextUrl.origin);
   const back = (query: string) => {
     const response = NextResponse.redirect(`${origin}${PAGE}?${query}`);
     response.cookies.set('coros_state', '', { path: '/api/coros', maxAge: 0 });

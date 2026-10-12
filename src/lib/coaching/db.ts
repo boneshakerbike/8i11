@@ -3,7 +3,8 @@
  * Reads from daily_metrics, writes trend_cache and coaching_history
  */
 
-import { get_client, ensure_schema, get_wellness_cache, get_coros_data } from '@/lib/db';
+import { get_client, ensure_schema, get_wellness_cache } from '@/lib/db';
+import { get_coros_days } from '@/lib/coros/data';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
 
 // Numeric columns in daily_metrics that get trend computation
@@ -184,7 +185,7 @@ export async function save_coaching_session(session: {
 }
 
 /**
- * Populate daily_metrics from wellness_cache (Oura) + coros_data (COROS) + optional manual inputs.
+ * Populate daily_metrics from wellness_cache (Oura) + coros_daily (COROS MCP sync) + optional manual inputs.
  * date_str: YYYY-MM-DD, epoch_day: mt_epoch_day() (Mountain Time day boundary)
  */
 export interface InjectMetrics {
@@ -236,10 +237,11 @@ export async function populate_daily_metrics(
   const db = get_client();
   const now = Math.floor(Date.now() / 1000);
 
-  const [oura, coros] = await Promise.all([
+  const [oura, coros_days] = await Promise.all([
     get_wellness_cache(date_str),
-    get_coros_data(date_str),
+    get_coros_days(db, date_str, date_str),
   ]);
+  const coros = coros_days[0] ?? null;
 
   // Extract Oura fields — prefer cache, fall back to inject_metrics from live session
   let sleep_duration_min: number | null = null;
@@ -288,31 +290,11 @@ export async function populate_daily_metrics(
   // Estimate CV age from HRV + RHR if Oura didn't provide it directly
   if (cardiovascular_age == null) cardiovascular_age = estimate_cv_age(hrv_rmssd, resting_hr);
 
-  // Extract COROS fields
-  let vo2_max: number | null = null;
-  let training_load_acute: number | null = null;
-  let training_load_chronic: number | null = null;
-  let recovery_pct: number | null = null;
-
-  if (coros) {
-    const d = coros.data as Record<string, unknown>;
-    const dash = d.dashboard as Record<string, unknown> | undefined;
-
-    if (dash) {
-      const ts = dash.training_status as Record<string, unknown> | undefined;
-      if (ts) {
-        if (ts.load_impact !== undefined) training_load_acute = Number(ts.load_impact);
-        if (ts.base_fitness !== undefined) training_load_chronic = Number(ts.base_fitness);
-      }
-      const rec = dash.recovery as Record<string, unknown> | undefined;
-      if (rec?.percentage !== undefined) recovery_pct = Number(rec.percentage);
-    } else {
-      // Flat field fallback for older data
-      if (d.vo2_max !== undefined) vo2_max = Number(d.vo2_max);
-      if (d.recovery !== undefined) recovery_pct = Number(d.recovery);
-      if (d.training_load !== undefined) training_load_acute = Number(d.training_load);
-    }
-  }
+  // COROS fields (stored for trends and display; device load never drives coaching)
+  const vo2_max = coros?.vo2max ?? null;
+  const training_load_acute = coros?.load_short ?? null;
+  const training_load_chronic = coros?.load_long ?? null;
+  const recovery_pct = coros?.recovery_pct ?? null;
 
   await db.execute({
     sql: DAILY_METRICS_MERGE_SQL,

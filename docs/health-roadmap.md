@@ -81,6 +81,15 @@ Done in this branch; see Status.
 - `querySportRecords` returns `labelId` and `sportType` per activity; `getActivityDetail` needs both. Sport codes seen: 204 mountain bike, 402 strength, 900 walk, 9806 custom outdoor (one e-MTB ride was logged this way). Ride pillars must count 200 to 205 plus 9806.
 - COROS reports its own sleep HRV, resting HR and a "HRV Baseline" that differ from Oura's numbers. Keep one source per metric: Oura for recovery (HRV, resting HR, sleep), COROS for training.
 - Activity results include GPS start coordinates. Do not commit raw results; fixtures must be sanitized.
+- COROS fills a missing value with 65535 (seen as 655.35 for efficiency factor). Parsers treat 65535, 6553.5 and 655.35 as missing.
+- `getActivityDetail` (needs `labelId` and `sportType`) reports elevation gain and loss separately. Ascent and descent can be stored apart, which fixes the old "descent read as climbing" bug at the source.
+
+#### When the data actually arrives (Bill, 2026-10-12)
+
+- Oura data reaches Oura's cloud only after Bill wakes up and opens the Oura app.
+- COROS syncs from the watch until bedtime. Overnight sleep and no-signal rides (bike parks) upload the next morning on home data.
+- So the daily job runs at midday (18:00 UTC), and every run re-fetches the whole last 7 days from both sources. Late uploads replace days that were empty or partial.
+- The coach's morning session will pull fresh data itself (Phase 3), not rely on the daily job alone.
 
 ### Phase 2: COROS through MCP
 
@@ -137,9 +146,21 @@ Done in this branch; see Status.
 
 - Phase 0 (#297): COROS sign-in and read-only probe. Passed on the preview 2026-10-12; findings above.
 
+### In progress
+
+- Phase 2 (branch `claude/health-area-redesign-d8ar3d`):
+  - `src/lib/coros/parse.ts`: one parser per read tool, tested on sanitized fixtures and checked once against real output (kept out of the repo).
+  - `coros_daily` and `coros_activities` tables (merge writes, never pruned); `src/lib/coros/sync.ts` pulls the last 7 days, so a missed night heals itself. Tool errors and "text but nothing parsed" are reported, not skipped.
+  - Production stores the COROS connection under its fixed domain (`coros_origin`, from `VERCEL_PROJECT_PRODUCTION_URL`) so the daily job finds it.
+  - Daily job at midday (18:00 UTC): Oura re-fetch of 7 days (moved to `src/lib/health/oura-sync.ts`), then COROS, then trends. Each step runs even if another fails; every run is logged in `health_sync_runs`.
+  - "Daily sync ran ..." line on the Coach and COROS pages (`src/components/sync_status.tsx`). It turns red if the job is over 26 hours late, a step failed, or COROS is disconnected.
+  - COROS page rebuilt on the synced data, with Sync now. The Chrome-scrape prompt, the paste box, `/api/coros/save` and the blanket `api/coros` proxy exemption are gone. `daily_metrics` reads COROS from `coros_daily`.
+  - Ascent and descent per outdoor activity from `getActivityDetail` ("Elevation Gain / Loss: X m / Y m"): asked once per activity, at most 10 per run, never for strength. A ride with no elevation line is reported as a possible format change.
+  - Preview test 2026-10-12: Connect, then Sync now returned "7 days, 14 activities" with no warnings.
+
 ### Next
 
-- Phase 2: daily COROS sync (parsers, tables, cron), plus a visible "last daily sync" line so nobody needs Vercel logs to know the job ran.
+- Phase 3: coach rebuild (needs the Master SoK file, pillar targets, and the model decision).
 
 ## Regenerating the session dump
 

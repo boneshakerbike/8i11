@@ -14,7 +14,7 @@ import { getToken } from 'next-auth/jwt';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { is_owner_or_preview_admin } from '@/lib/owner';
 import {
-  COROS_MCP_URL, COROS_READ_TOOLS, call_coros_read_tool, coros_connection_status,
+  COROS_MCP_URL, COROS_READ_TOOLS, call_coros_read_tool, coros_connection_status, coros_origin,
   describe_coros_error, is_read_tool, list_coros_tools, with_coros,
 } from '@/lib/coros/mcp-client';
 import { build_sample_args } from '@/lib/coros/sample-args';
@@ -39,7 +39,7 @@ async function deny(request: NextRequest): Promise<NextResponse | null> {
 export async function GET(request: NextRequest) {
   const denied = await deny(request);
   if (denied) return denied;
-  const origin = request.nextUrl.origin;
+  const origin = coros_origin(request.nextUrl.origin);
   return NextResponse.json({
     ...(await coros_connection_status(origin)),
     origin,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const denied = await deny(request);
   if (denied) return denied;
 
-  const origin = request.nextUrl.origin;
+  const origin = coros_origin(request.nextUrl.origin);
   const body = await request.json().catch(() => ({})) as { action?: string; tool?: string; arguments?: unknown };
 
   try {

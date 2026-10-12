@@ -123,6 +123,8 @@ async function init_schema(): Promise<void> {
     )
   `);
 
+  // Legacy COROS reports from the retired Chrome scrape (no longer written).
+  // COROS data now syncs through MCP into coros_daily / coros_activities.
   await db.execute(`
     CREATE TABLE IF NOT EXISTS coros_data (
       date TEXT PRIMARY KEY,
@@ -981,57 +983,8 @@ export async function get_adjacent_stories(date_key: string): Promise<{
 }
 
 // ============================================================================
-// COROS Data
+// COROS Data (MOVED to src/lib/coros/data.ts; legacy coros_data rows preserved)
 // ============================================================================
-
-export async function save_coros_data(date: string, data_json: string): Promise<void> {
-  await ensure_schema();
-  const db = get_client();
-
-  await db.execute({
-    sql: `INSERT OR REPLACE INTO coros_data (date, data_json, updated_at) VALUES (?, ?, datetime('now'))`,
-    args: [date, data_json]
-  });
-}
-
-export async function get_coros_data(date: string): Promise<{ date: string; data: unknown; source: string; created_at: string; updated_at: string } | null> {
-  await ensure_schema();
-  const db = get_client();
-
-  const result = await db.execute({
-    sql: 'SELECT * FROM coros_data WHERE date = ?',
-    args: [date]
-  });
-
-  if (result.rows.length === 0) return null;
-
-  const row = result.rows[0];
-  return {
-    date: row.date as string,
-    data: JSON.parse(row.data_json as string),
-    source: row.source as string,
-    created_at: row.created_at as string,
-    updated_at: row.updated_at as string
-  };
-}
-
-export async function get_coros_range(start: string, end: string): Promise<Array<{ date: string; data: unknown; source: string; created_at: string; updated_at: string }>> {
-  await ensure_schema();
-  const db = get_client();
-
-  const result = await db.execute({
-    sql: 'SELECT * FROM coros_data WHERE date >= ? AND date <= ? ORDER BY date DESC',
-    args: [start, end]
-  });
-
-  return result.rows.map(row => ({
-    date: row.date as string,
-    data: JSON.parse(row.data_json as string),
-    source: row.source as string,
-    created_at: row.created_at as string,
-    updated_at: row.updated_at as string
-  }));
-}
 
 // ============================================================================
 // Suggestions (RETIRED — data preserved in database, code removed)

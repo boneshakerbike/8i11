@@ -47,10 +47,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Protect all routes except login, story, archive, games, weather, privacy, terms, api/auth, api/health, api/stories, api/prompts, api/oura, api/coros, the web app manifest and its icons, and static files.
+  // Protect all routes except login, story, archive, games, weather, privacy, terms, api/auth, api/health, api/stories, api/prompts, api/oura, the web app manifest and its icons, and static files.
   // /login is matched separately so signed-in visitors can be sent on (see above).
   matcher: [
     '/login',
-    '/((?!login|story|archive|creative/archive|games|weather|privacy|terms|api/auth|api/health|api/stories|api/prompts|api/oura|api/coros|manifest.webmanifest|icons/|_next/static|_next/image|favicon.ico|icon.svg).*)',
+    '/((?!login|story|archive|creative/archive|games|weather|privacy|terms|api/auth|api/health|api/stories|api/prompts|api/oura|manifest.webmanifest|icons/|_next/static|_next/image|favicon.ico|icon.svg).*)',
   ],
 };

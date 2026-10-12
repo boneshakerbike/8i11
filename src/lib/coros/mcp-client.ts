@@ -37,6 +37,19 @@ export function is_read_tool(name: string): name is CorosReadTool {
   return (COROS_READ_TOOLS as readonly string[]).includes(name);
 }
 
+/**
+ * The site origin a COROS connection is stored under. Production uses its fixed
+ * domain, so the daily cron (which has no browser and may arrive on another
+ * host name) finds the same connection the owner made. Previews use their own
+ * URL, since each one registers its own callback with COROS.
+ */
+export function coros_origin(request_origin: string, env: Record<string, string | undefined> = process.env): string {
+  if (env.VERCEL_ENV === 'production' && env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  return request_origin;
+}
+
 let store: CorosStore | null = null;
 const get_store = (): CorosStore => (store ??= create_coros_store(get_client()));
 

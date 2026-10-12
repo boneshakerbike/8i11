@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { build_sample_args, shift_date } from '@/lib/coros/sample-args';
+import { build_sample_args } from '@/lib/coros/sample-args';
+import { shift_date } from '@/lib/coaching/day';
 
 const TODAY = '2026-10-12';
 
