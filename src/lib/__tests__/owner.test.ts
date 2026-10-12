@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { is_owner_token } from '../owner';
+import { is_owner_or_preview_admin, is_owner_token } from '../owner';
 
 describe('is_owner_token', () => {
   const saved = process.env.ALLOWED_GITHUB_USERS;
@@ -36,5 +36,26 @@ describe('is_owner_token', () => {
   it('rejects a GitHub login that is not allowed', () => {
     expect(is_owner_token({ provider: 'github', login: 'stranger' })).toBe(false);
     expect(is_owner_token({ provider: 'github', login: '' })).toBe(false);
+  });
+});
+
+describe('is_owner_or_preview_admin', () => {
+  beforeEach(() => { delete process.env.ALLOWED_GITHUB_USERS; });
+
+  it('accepts the owner in any environment', () => {
+    expect(is_owner_or_preview_admin({ provider: 'github', login: 'boneshakerbike' }, 'production')).toBe(true);
+    expect(is_owner_or_preview_admin({ provider: 'github', login: 'boneshakerbike' }, 'preview')).toBe(true);
+  });
+
+  it('accepts the Admin PIN session only on a preview', () => {
+    expect(is_owner_or_preview_admin({ provider: 'admin-pin' }, 'preview')).toBe(true);
+    expect(is_owner_or_preview_admin({ provider: 'admin-pin' }, 'production')).toBe(false);
+    expect(is_owner_or_preview_admin({ provider: 'admin-pin' }, undefined)).toBe(false);
+  });
+
+  it('rejects guests and missing sessions on a preview', () => {
+    expect(is_owner_or_preview_admin({ provider: 'guest-pin' }, 'preview')).toBe(false);
+    expect(is_owner_or_preview_admin({ provider: 'github', login: 'stranger' }, 'preview')).toBe(false);
+    expect(is_owner_or_preview_admin(null, 'preview')).toBe(false);
   });
 });

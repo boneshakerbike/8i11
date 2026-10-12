@@ -182,7 +182,8 @@ export default function CorosPage() {
     <div className="min-h-screen bg-[#1a1a2e] text-gray-200 p-4">
       <NavTabs />
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-cyan-400 mb-4">COROS</h1>
+        <h1 className="text-2xl font-bold text-cyan-400 mb-1">COROS</h1>
+        <a href="/health/coros/mcp" className="inline-block text-sm text-cyan-400/70 hover:text-cyan-400 mb-4">Test the COROS MCP connection</a>
 
         <div className="mb-4">
           <label className="text-sm text-gray-400 mr-2">Date:</label>

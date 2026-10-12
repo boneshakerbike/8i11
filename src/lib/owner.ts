@@ -23,3 +23,20 @@ export function is_owner_token(token: Record<string, unknown> | null | undefined
   if (typeof token.login !== 'string' || !token.login) return false;
   return allowed_github_users().includes(token.login);
 }
+
+/**
+ * The owner, or the Admin PIN session on a Vercel preview deployment.
+ *
+ * GitHub sign-in cannot return to a preview URL, so owner-only features are
+ * tested there with the Admin PIN (auth.ts accepts it only on previews). This
+ * checks VERCEL_ENV again so a stray admin-pin token never counts in production.
+ * Use it only where testing on a preview is the point; is_owner_token stays the
+ * default.
+ */
+export function is_owner_or_preview_admin(
+  token: Record<string, unknown> | null | undefined,
+  vercel_env = process.env.VERCEL_ENV,
+): boolean {
+  if (is_owner_token(token)) return true;
+  return vercel_env === 'preview' && token?.provider === 'admin-pin';
+}
