@@ -25,6 +25,13 @@ export function is_owner_token(token: Record<string, unknown> | null | undefined
 }
 
 /**
+ * What to tell someone an owner check refused. The usual cause is a GitHub
+ * session from before provider/login were recorded (Oct 2026): it still works
+ * everywhere else but fails closed here until it signs in again.
+ */
+export const OWNER_SIGN_IN_HINT = 'This needs your GitHub sign-in. Sign out, sign in with GitHub, then try again.';
+
+/**
  * The owner, or the Admin PIN session on a Vercel preview deployment.
  *
  * GitHub sign-in cannot return to a preview URL, so owner-only features are

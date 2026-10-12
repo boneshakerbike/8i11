@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { is_owner_or_preview_admin } from '@/lib/owner';
+import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner';
 import { coros_origin, describe_coros_error, finish_coros_authorization } from '@/lib/coros/mcp-client';
 
 const PAGE = '/health/coros';
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   };
   const fail = (message: string) => back(`error=${encodeURIComponent(message)}`);
 
-  if (!is_owner_or_preview_admin(await getToken({ req: request }))) return fail('Owner only');
+  if (!is_owner_or_preview_admin(await getToken({ req: request }))) return fail(OWNER_SIGN_IN_HINT);
 
   const params = request.nextUrl.searchParams;
   const error = params.get('error');
