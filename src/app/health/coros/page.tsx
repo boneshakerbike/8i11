@@ -11,7 +11,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import NavTabs from '@/components/nav_tabs'
 import SyncStatus from '@/components/sync_status'
-import { strength_kind } from '@/lib/coros/classify'
+import { STRENGTH_SPORT_TYPE, strength_kind } from '@/lib/coros/classify'
 
 interface CorosDay {
   date: string
@@ -66,14 +66,19 @@ const feet = (m: number | null) => (m == null ? null : `${Math.round(m * 3.281)}
 const short_date = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
 
 /** COROS names custom sports "Sport(9806)"; the location label Bill gave it reads better. */
-const activity_name = (a: CorosActivity) =>
-  /^Sport\(\d+\)$/.test(a.sport_name) && a.location ? a.location : a.sport_name
+const is_custom_sport = (a: CorosActivity) => /^Sport\(\d+\)$/.test(a.sport_name)
+const activity_name = (a: CorosActivity) => (is_custom_sport(a) && a.location ? a.location : a.sport_name)
 
 const STRENGTH_LABEL = { heavy: 'Heavy strength', mobility: 'Mobility' } as const
 
 /** The first few exercises, then how many more. */
 const exercise_line = (names: string[] | null) =>
   !names?.length ? null : names.length <= 4 ? names.join(', ') : `${names.slice(0, 4).join(', ')} +${names.length - 4} more`
+
+/** A strength session's exercises, or why there are none to show. */
+const strength_line = (a: CorosActivity) =>
+  a.sport_type !== STRENGTH_SPORT_TYPE ? null
+    : exercise_line(a.exercises) ?? (a.working_sets == null ? 'Exercises not read yet' : 'No exercise list in COROS')
 
 const btn = 'text-sm px-3 py-2 rounded border border-white/15 hover:border-cyan-400/40 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -200,9 +205,10 @@ function CorosContent() {
             <ul className="divide-y divide-white/5 text-sm">
               {data.activities.map(a => {
                 const kind = strength_kind(a)
-                const exercises = exercise_line(a.exercises)
+                const exercises = strength_line(a)
                 const parts = [
                   kind ? STRENGTH_LABEL[kind] : '',
+                  is_custom_sport(a) ? 'custom sport' : '',
                   clock(a.duration_s),
                   miles(a.distance_m),
                   a.sets != null ? `${a.sets} sets` : '',

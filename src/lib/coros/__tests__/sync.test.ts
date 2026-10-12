@@ -13,7 +13,7 @@ function fake_mcp(replies: Record<string, Reply>, calls: Array<{ name: string; a
     callTool: async ({ name, arguments: args }: { name: string; arguments: unknown }) => {
       calls.push({ name, args });
       const r = replies[name] ?? { text: '' };
-      return { content: [{ type: 'text', text: JSON.stringify(r.text) }], isError: r.isError ?? false };
+      return { content: [{ type: 'text', text: r.raw ? r.text : JSON.stringify(r.text) }], isError: r.isError ?? false };
     },
   } as unknown as McpClient;
 }
@@ -122,7 +122,7 @@ describe('fill_activity_details', () => {
       'queryActivityLapData 100000000000000001',
     ]);
     expect(calls.find(c => c.name === 'queryActivityLapData')?.args).toEqual({ labelId: '100000000000000001', sportType: 402 });
-    expect(first).toEqual({ filled: 1, strength: 1, warnings: [] });
+    expect(first).toEqual({ filled: 1, strength: 1, waiting: 0, warnings: [] });
 
     const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
     expect(acts.find(a => a.sport_type === 204)).toMatchObject({ ascent_m: 1200, descent_m: 1250 });
@@ -137,7 +137,7 @@ describe('fill_activity_details', () => {
 
     // Second run: everything was asked once already, a walk without elevation included
     calls.length = 0;
-    expect(await fill_activity_details(client, db)).toEqual({ filled: 0, strength: 0, warnings: [] });
+    expect(await fill_activity_details(client, db)).toEqual({ filled: 0, strength: 0, waiting: 0, warnings: [] });
     expect(calls).toHaveLength(0);
   });
 
@@ -205,5 +205,50 @@ describe('fill_activity_details', () => {
     calls.length = 0;
     await fill_activity_details(client, db);
     expect(calls.map(c => `${c.name} ${label_of(c)}`)).toEqual(['queryActivityLapData 100000000000000001']);
+  });
+
+  it('warns once when COROS lists sets but the lap data has none', async () => {
+    const { fill_activity_details, db, client, calls } = await setup((_label, tool) =>
+      tool === 'queryActivityLapData' ? LAPS('{"lapGroups":[]}') : { text: F.ACTIVITY_DETAIL });
+
+    // The fixture's strength record says "Sets: 12"
+    expect((await fill_activity_details(client, db)).warnings).toEqual([
+      'queryActivityLapData 100000000000000001: COROS lists 12 sets but the lap data has none',
+    ]);
+    const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
+    expect(acts.find(a => a.sport_type === 402)).toMatchObject({ exercises: [], working_sets: 0, loaded_sets: 0 });
+
+    calls.length = 0;
+    expect((await fill_activity_details(client, db)).warnings).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('does not warn when neither the record nor the lap data has sets', async () => {
+    const { fill_activity_details, db, client } = await setup((_label, tool) =>
+      tool === 'queryActivityLapData' ? LAPS('{"lapGroups":[]}') : { text: F.ACTIVITY_DETAIL });
+    await db.execute("UPDATE coros_activities SET sets = NULL WHERE label_id = '100000000000000001'");
+    expect((await fill_activity_details(client, db)).warnings).toEqual([]);
+  });
+
+  it('leaves the rest for the next run past the cap, oldest last, and says how many', async () => {
+    const { fill_activity_details, MAX_DETAIL_CALLS } = await import('@/lib/coros/sync');
+    const db = createClient({ url: ':memory:' });
+    // Two more strength sessions than one run may ask, newest first by start time
+    const sessions = Array.from({ length: MAX_DETAIL_CALLS + 2 }, (_, i) => ({
+      label_id: `2000000000000000${String(i).padStart(2, '0')}`, sport_type: 402, sport_name: 'Strength',
+      date: '2026-01-03', start_ts: 1767400000 - i * 3600, end_ts: null, duration_s: 600, distance_m: null,
+      sets: 4, avg_hr: null, calories: null, avg_speed_kmh: null, location: null,
+    }));
+    await save_coros_activities(db, sessions);
+    const calls: Array<{ name: string; args: unknown }> = [];
+    const client = fake_mcp({ queryActivityLapData: LAPS(F.STRENGTH_LAPS_MOBILITY) }, calls);
+
+    const first = await fill_activity_details(client, db);
+    expect(first).toMatchObject({ strength: MAX_DETAIL_CALLS, waiting: 2, warnings: [] });
+    expect(calls.map(label_of)).toEqual(sessions.slice(0, MAX_DETAIL_CALLS).map(a => a.label_id));
+
+    calls.length = 0;
+    expect(await fill_activity_details(client, db)).toMatchObject({ strength: 2, waiting: 0 });
+    expect(calls.map(label_of)).toEqual(sessions.slice(MAX_DETAIL_CALLS).map(a => a.label_id));
   });
 });

@@ -113,17 +113,25 @@ export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 
  */
 export const DETAIL_VERSION = 2;
 
-/** Activities not yet read by the current detail parser, newest first. Strength sessions included. */
-export async function activities_needing_detail(db: Client, limit: number): Promise<Array<{ label_id: string; sport_type: number }>> {
+/**
+ * Activities not yet read by the current detail parser, newest first, strength
+ * sessions included. The whole queue, so the sync can say how many wait for
+ * the next run; it stays short because each activity is asked once.
+ */
+export async function activities_needing_detail(db: Client): Promise<Array<{ label_id: string; sport_type: number; sets: number | null }>> {
   await ensure_coros_tables(db);
   const r = await db.execute({
-    sql: `SELECT label_id, sport_type FROM coros_activities
+    sql: `SELECT label_id, sport_type, sets FROM coros_activities
           WHERE COALESCE(detail_version, CASE WHEN detail_fetched_at IS NULL THEN 0 ELSE 1 END) < ?
             AND sport_type IN (${[...DETAIL_SPORT_TYPES, STRENGTH_SPORT_TYPE].join(', ')})
-          ORDER BY start_ts DESC LIMIT ?`,
-    args: [DETAIL_VERSION, limit],
+          ORDER BY start_ts DESC`,
+    args: [DETAIL_VERSION],
   });
-  return r.rows.map(row => ({ label_id: String(row.label_id), sport_type: Number(row.sport_type) }));
+  return r.rows.map(row => ({
+    label_id: String(row.label_id),
+    sport_type: Number(row.sport_type),
+    sets: row.sets == null ? null : Number(row.sets),
+  }));
 }
 
 /** Store what the detail had and mark it read by this parser version, found or not, so it is asked once. */
