@@ -6,14 +6,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { is_owner_or_preview_admin } from '@/lib/owner';
+import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner';
 import { coros_origin, describe_coros_error, start_coros_authorization } from '@/lib/coros/mcp-client';
 
 const PAGE = '/health/coros';
 
 export async function GET(request: NextRequest) {
+  // A browser navigation, so answer with the page and a next step, not raw JSON
   if (!is_owner_or_preview_admin(await getToken({ req: request }))) {
-    return NextResponse.json({ error: 'Owner only' }, { status: 403 });
+    return NextResponse.redirect(`${request.nextUrl.origin}${PAGE}?error=${encodeURIComponent(OWNER_SIGN_IN_HINT)}`);
   }
 
   // Production always connects under its fixed domain (see coros_origin), so the

@@ -40,6 +40,7 @@ interface CorosActivity {
   avg_hr: number | null
   ascent_m: number | null
   descent_m: number | null
+  location: string | null
 }
 
 interface CorosData {
@@ -58,6 +59,10 @@ const clock = (s: number | null) => {
 const miles = (m: number | null) => (m == null ? '' : `${(m / 1609.34).toFixed(1)} mi`)
 const feet = (m: number | null) => (m == null ? null : `${Math.round(m * 3.281)} ft`)
 const short_date = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+/** COROS names custom sports "Sport(9806)"; the location label Bill gave it reads better. */
+const activity_name = (a: CorosActivity) =>
+  /^Sport\(\d+\)$/.test(a.sport_name) && a.location ? a.location : a.sport_name
 
 const btn = 'text-sm px-3 py-2 rounded border border-white/15 hover:border-cyan-400/40 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -114,7 +119,7 @@ function CorosContent() {
             {url_error}
           </div>
         )}
-        {just_connected && (
+        {just_connected && !sync_result && (
           <div className="p-3 rounded border border-green-400/40 bg-green-400/10 text-sm text-green-300">
             Connected to COROS. Press Sync now to pull the last 7 days.
           </div>
@@ -194,7 +199,7 @@ function CorosContent() {
                 return (
                   <li key={a.label_id} className="px-3 py-2">
                     <div className="flex justify-between gap-2">
-                      <span className="text-white">{a.sport_name}</span>
+                      <span className="text-white">{activity_name(a)}</span>
                       <span className="text-xs text-gray-500 whitespace-nowrap">{short_date(a.date)}</span>
                     </div>
                     <div className="text-xs text-gray-400">{parts.join(' · ')}</div>

@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import { is_owner_or_preview_admin } from '@/lib/owner';
+import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner';
 import {
   COROS_MCP_URL, COROS_READ_TOOLS, call_coros_read_tool, coros_connection_status, coros_origin,
   describe_coros_error, is_read_tool, list_coros_tools, with_coros,
@@ -33,7 +33,7 @@ function capped(result: unknown): unknown {
 
 async function deny(request: NextRequest): Promise<NextResponse | null> {
   if (is_owner_or_preview_admin(await getToken({ req: request }))) return null;
-  return NextResponse.json({ error: 'Owner only' }, { status: 403 });
+  return NextResponse.json({ error: OWNER_SIGN_IN_HINT }, { status: 403 });
 }
 
 export async function GET(request: NextRequest) {

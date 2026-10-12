@@ -105,17 +105,19 @@ describe('fill_activity_details', () => {
     return { fill_activity_details, db, client, calls };
   }
 
-  it('asks outdoor activities once, skips strength, and stores ascent and descent', async () => {
+  it('asks built-in outdoor activities once, skips strength and custom sports, stores ascent and descent', async () => {
     const { fill_activity_details, db, client, calls } = await setup(label =>
       label === '100000000000000003' ? { text: NO_ELEVATION } : { text: F.ACTIVITY_DETAIL });
 
     const first = await fill_activity_details(client, db);
-    expect(calls.map(c => (c.args as { labelId: string }).labelId).sort()).toEqual(['100000000000000002', '100000000000000003', '100000000000000004']);
-    expect(first).toEqual({ filled: 2, warnings: [] });
+    // 001 strength and 004 custom Sport(9806) are never asked
+    expect(calls.map(c => (c.args as { labelId: string }).labelId).sort()).toEqual(['100000000000000002', '100000000000000003']);
+    expect(first).toEqual({ filled: 1, warnings: [] });
 
     const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
     expect(acts.find(a => a.sport_type === 204)).toMatchObject({ ascent_m: 1200, descent_m: 1250 });
     expect(acts.find(a => a.sport_type === 900)).toMatchObject({ ascent_m: null, descent_m: null });
+    expect(acts.find(a => a.sport_type === 9806)).toMatchObject({ ascent_m: null, descent_m: null });
 
     // Second run: everything was asked once already, a walk without elevation included
     calls.length = 0;
@@ -123,10 +125,10 @@ describe('fill_activity_details', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('warns when a ride comes back without elevation, and retries a failed call next run', async () => {
+  it('warns when a built-in ride comes back without elevation, and retries a failed call next run', async () => {
     const { fill_activity_details, db, client, calls } = await setup(label => {
       if (label === '100000000000000002') return { text: NO_ELEVATION };
-      if (label === '100000000000000004') return { text: 'busy', isError: true };
+      if (label === '100000000000000003') return { text: 'busy', isError: true };
       return { text: F.ACTIVITY_DETAIL };
     });
 
@@ -138,6 +140,6 @@ describe('fill_activity_details', () => {
 
     calls.length = 0;
     await fill_activity_details(client, db);
-    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000004']);
+    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000003']);
   });
 });
