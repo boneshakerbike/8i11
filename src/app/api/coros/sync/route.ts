@@ -1,6 +1,6 @@
 /**
  * API route: POST /api/coros/sync
- * "Sync now": pull the last 7 days from COROS immediately (the nightly job
+ * "Sync now": pull the last 7 days from COROS immediately (the daily job
  * does the same). Owner only (or the Admin PIN on a preview).
  */
 

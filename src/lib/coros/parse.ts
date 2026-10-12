@@ -25,10 +25,17 @@ export function tool_text(result: CallToolResult | null | undefined): string {
   return text;
 }
 
+/**
+ * COROS fills a missing value with 65535 (shown as 65535, 6553.5 or 655.35).
+ * Number patterns below read decimals on purpose: a whole-number pattern would
+ * turn 655.35 into a believable but wrong 655.
+ */
+const PLACEHOLDERS = new Set([65535, 6553.5, 655.35]);
+
 const num = (s: string | undefined | null): number | null => {
   if (s == null) return null;
   const n = Number(s.replaceAll(',', ''));
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) && !PLACEHOLDERS.has(n) ? n : null;
 };
 
 const match_num = (text: string, re: RegExp): number | null => num(text.match(re)?.[1]);
@@ -93,15 +100,15 @@ export function parse_daily_health(text: string): CorosDailyHealth[] {
     const sleep_dur = (label: string) => duration_text_min(sleep.match(new RegExp(`${label}:\\s*([^|\\n]+)`))?.[1]);
     return {
       date,
-      steps: match_num(b, /Steps:\s*([\d,]+)/),
+      steps: match_num(b, /Steps:\s*([\d,.]+)/),
       exercise_min: dur('Exercise'),
-      stress_avg: match_num(b, /Stress:\s*Avg\s*(\d+)/),
+      stress_avg: match_num(b, /Stress:\s*Avg\s*([\d.]+)/),
       sleep_total_min: sleep_dur('Total'),
       sleep_deep_min: sleep_dur('Deep'),
       sleep_light_min: sleep_dur('Light'),
       sleep_rem_min: sleep_dur('REM'),
       sleep_awake_min: sleep_dur('Awake'),
-      sleep_hr_avg: match_num(sleep, /Sleep HR:\s*Avg\s*(\d+)/),
+      sleep_hr_avg: match_num(sleep, /Sleep HR:\s*Avg\s*([\d.]+)/),
     };
   });
 }
@@ -119,15 +126,15 @@ export interface CorosSleepHrv {
 export function parse_sleep_hrv(text: string): CorosSleepHrv[] {
   const assessment = text.split(/Sleep HRV Time Series/)[0];
   return blocks_by_date(assessment, /^(\d{4}-\d{2}-\d{2}):$/).map(([date, b]) => {
-    const avg = b.match(/HRV Avg:\s*(\d+)\s*ms\s*\S\s*(.+)/);
-    const range = b.match(/Normal Range:\s*(\d+)\s*-\s*(\d+)/);
+    const avg = b.match(/HRV Avg:\s*([\d.]+)\s*ms\s*\S\s*(.+)/);
+    const range = b.match(/Normal Range:\s*([\d.]+)\s*-\s*([\d.]+)/);
     return {
       date,
       hrv_avg: num(avg?.[1]),
       status: avg?.[2]?.trim() || null,
       range_low: num(range?.[1]),
       range_high: num(range?.[2]),
-      baseline: match_num(b, /Baseline:\s*(\d+)/),
+      baseline: match_num(b, /Baseline:\s*([\d.]+)/),
     };
   });
 }
@@ -136,7 +143,7 @@ export function parse_sleep_hrv(text: string): CorosSleepHrv[] {
 export function parse_resting_hr(text: string): Array<{ date: string; resting_hr: number | null }> {
   return [...text.matchAll(/^(\d{4}-\d{2}-\d{2}):\s*(.+)$/gm)].map(m => ({
     date: m[1],
-    resting_hr: match_num(m[2], /^(\d+)\s*bpm/),
+    resting_hr: match_num(m[2], /^([\d.]+)\s*bpm/),
   }));
 }
 
@@ -148,12 +155,12 @@ export interface CorosRecovery {
 
 /** queryRecoveryStatus: current state only, no date in the text. */
 export function parse_recovery(text: string): CorosRecovery | null {
-  const pct = match_num(text, /Recovery:\s*(\d+)\s*%/);
+  const pct = match_num(text, /Recovery:\s*([\d.]+)\s*%/);
   if (pct == null) return null;
   return {
     recovery_pct: pct,
     level: text.match(/Level:\s*(.+)/)?.[1]?.trim() ?? null,
-    full_recovery_hours: match_num(text, /Estimated Full Recovery:\s*(\d+)\s*h/),
+    full_recovery_hours: match_num(text, /Estimated Full Recovery:\s*([\d.]+)\s*h/),
   };
 }
 
@@ -217,12 +224,32 @@ export function parse_sport_records(text: string): CorosActivity[] {
       end_ts: match_num(part, /endTimestamp=(\d+)/),
       duration_s: clock_seconds(part.match(/Duration:\s*([\d:]+)/)?.[1]),
       distance_m: distance_value == null ? null : Math.round(distance?.[2] === 'km' ? distance_value * 1000 : distance_value),
-      sets: match_num(part, /Sets:\s*(\d+)/),
-      avg_hr: match_num(part, /Avg HR:\s*(\d+)/),
-      calories: match_num(part, /Calories:\s*([\d,]+)/),
+      sets: match_num(part, /Sets:\s*([\d.]+)/),
+      avg_hr: match_num(part, /Avg HR:\s*([\d.]+)/),
+      calories: match_num(part, /Calories:\s*([\d,.]+)/),
       avg_speed_kmh: match_num(part, /Average Speed:\s*([\d.]+)\s*km\/h/),
       location: part.match(/Location:\s*(.+)/)?.[1]?.trim() ?? null,
     });
   }
   return out;
+}
+
+export interface CorosActivityDetail {
+  ascent_m: number | null;
+  descent_m: number | null;
+}
+
+/**
+ * getActivityDetail: elevation gain and loss, kept separate so a lift-served
+ * park day (big descent, little climbing) is never read as climbing.
+ * Returns null when the text has no elevation line.
+ */
+export function parse_activity_detail(text: string): CorosActivityDetail | null {
+  const m = text.match(/Elevation Gain\s*\/\s*Loss:\s*([\d.,]+)\s*(m|ft)\s*\/\s*([\d.,]+)\s*(m|ft)/);
+  if (!m) return null;
+  const meters = (value: string, unit: string) => {
+    const n = num(value);
+    return n == null ? null : Math.round(unit === 'ft' ? n / 3.281 : n);
+  };
+  return { ascent_m: meters(m[1], m[2]), descent_m: meters(m[3], m[4]) };
 }

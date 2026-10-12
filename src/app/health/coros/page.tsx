@@ -2,7 +2,7 @@
 
 /**
  * COROS: training data synced through the official COROS MCP server.
- * The nightly job syncs the last 7 days; "Sync now" does the same on demand.
+ * The daily job syncs the last 7 days; "Sync now" does the same on demand.
  * Raw drill-down only: the coach reads COROS for training, Oura for recovery.
  */
 

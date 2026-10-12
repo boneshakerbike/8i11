@@ -111,3 +111,23 @@ export const SPORT_RECORDS = `Sport Records — 2026-01-01 to 2026-01-03 (4 reco
    Duration: 1:56:40 | Distance: 35.00 km
    Average Pace: 3:20 /km | Avg HR: 125 bpm | Calories: 1,400 kcal
    LabelId: 100000000000000004 | SportType: 9806`;
+
+/** getActivityDetail for a ride (labelId + sportType), same layout as the real reply. */
+export const ACTIVITY_DETAIL = `🚴 Mountain Bike Activity Details
+========================================
+
+Workout Time: 3:00:00
+Distance: 30.00 km
+Total Time: 3:10:00
+Calories: 1800 kcal
+Average Speed: 10.0 km/h
+Moving Average Speed: 12.0 km/h
+Max Speed: 40.0 km/h
+Average Heart Rate: 115 bpm
+Elevation Gain / Loss: 1200 m / 1250 m
+Training Load: 250
+Efficiency Factor: 655.35
+Variation Index: 655.35
+Aerobic TE: 4.0
+Anaerobic TE: 1.0
+Training Focus: Base`;

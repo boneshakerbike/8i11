@@ -85,3 +85,59 @@ describe('coros tables', () => {
     expect(acts[1]).toMatchObject({ sport_type: 204, distance_m: 30500, ascent_m: null, descent_m: null });
   });
 });
+
+describe('fill_activity_details', () => {
+  const NO_ELEVATION = 'Walk Activity Details\nWorkout Time: 0:16:40';
+
+  async function setup(detail_for: (label: string) => Reply) {
+    const { fill_activity_details } = await import('@/lib/coros/sync');
+    const db = createClient({ url: ':memory:' });
+    const pull = await pull_coros_week(fake_mcp(ALL), '2026-01-03');
+    await save_coros_activities(db, pull.activities);
+    const calls: Array<{ name: string; args: unknown }> = [];
+    const client = {
+      callTool: async ({ name, arguments: args }: { name: string; arguments: { labelId: string } }) => {
+        calls.push({ name, args });
+        const r = detail_for(args.labelId);
+        return { content: [{ type: 'text', text: JSON.stringify(r.text) }], isError: r.isError ?? false };
+      },
+    } as unknown as McpClient;
+    return { fill_activity_details, db, client, calls };
+  }
+
+  it('asks outdoor activities once, skips strength, and stores ascent and descent', async () => {
+    const { fill_activity_details, db, client, calls } = await setup(label =>
+      label === '100000000000000003' ? { text: NO_ELEVATION } : { text: F.ACTIVITY_DETAIL });
+
+    const first = await fill_activity_details(client, db);
+    expect(calls.map(c => (c.args as { labelId: string }).labelId).sort()).toEqual(['100000000000000002', '100000000000000003', '100000000000000004']);
+    expect(first).toEqual({ filled: 2, warnings: [] });
+
+    const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
+    expect(acts.find(a => a.sport_type === 204)).toMatchObject({ ascent_m: 1200, descent_m: 1250 });
+    expect(acts.find(a => a.sport_type === 900)).toMatchObject({ ascent_m: null, descent_m: null });
+
+    // Second run: everything was asked once already, a walk without elevation included
+    calls.length = 0;
+    expect(await fill_activity_details(client, db)).toEqual({ filled: 0, warnings: [] });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('warns when a ride comes back without elevation, and retries a failed call next run', async () => {
+    const { fill_activity_details, db, client, calls } = await setup(label => {
+      if (label === '100000000000000002') return { text: NO_ELEVATION };
+      if (label === '100000000000000004') return { text: 'busy', isError: true };
+      return { text: F.ACTIVITY_DETAIL };
+    });
+
+    const first = await fill_activity_details(client, db);
+    expect(first.warnings).toEqual([
+      'getActivityDetail 100000000000000002: ride has no elevation line (format change?)',
+      'getActivityDetail: busy',
+    ]);
+
+    calls.length = 0;
+    await fill_activity_details(client, db);
+    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000004']);
+  });
+});

@@ -6,7 +6,7 @@
  */
 
 import type { Client } from '@libsql/client';
-import type { CorosActivity } from '@/lib/coros/parse';
+import type { CorosActivity, CorosActivityDetail } from '@/lib/coros/parse';
 
 /** One day of COROS data, assembled from several tools. Every field but date may be missing. */
 export interface CorosDay {
@@ -46,10 +46,15 @@ const ACTIVITY_COLUMNS = [
   'sets', 'avg_hr', 'calories', 'avg_speed_kmh', 'location',
 ] as const satisfies readonly (keyof CorosActivity)[];
 
+const now_s = () => Math.floor(Date.now() / 1000);
+
 const merge_set = (cols: readonly string[], table: string) =>
   cols.map(c => `${c} = COALESCE(excluded.${c}, ${table}.${c})`).join(', ');
 
+const ensured = new WeakSet<Client>();
+
 export async function ensure_coros_tables(db: Client): Promise<void> {
+  if (ensured.has(db)) return;
   await db.batch([
     `CREATE TABLE IF NOT EXISTS coros_daily (
       date TEXT PRIMARY KEY,
@@ -71,9 +76,45 @@ export async function ensure_coros_tables(db: Client): Promise<void> {
     )`,
     'CREATE INDEX IF NOT EXISTS idx_coros_activities_date ON coros_activities(date)',
   ], 'write');
+  // Added after the table first shipped: when getActivityDetail was last called.
+  try {
+    await db.execute('ALTER TABLE coros_activities ADD COLUMN detail_fetched_at INTEGER');
+  } catch {
+    // Column already exists
+  }
+  ensured.add(db);
 }
 
-const now_s = () => Math.floor(Date.now() / 1000);
+/**
+ * Outdoor sports whose detail carries elevation: run, trail, track, hike,
+ * climb, outdoor/e/gravel/mountain bikes, walk, and the custom outdoor type
+ * one e-MTB ride was logged as.
+ */
+export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 205, 900, 9806] as const;
+
+/** Activities never asked for detail yet, newest first. */
+export async function activities_needing_detail(db: Client, limit: number): Promise<Array<{ label_id: string; sport_type: number }>> {
+  await ensure_coros_tables(db);
+  const r = await db.execute({
+    sql: `SELECT label_id, sport_type FROM coros_activities
+          WHERE detail_fetched_at IS NULL AND sport_type IN (${DETAIL_SPORT_TYPES.join(', ')})
+          ORDER BY start_ts DESC LIMIT ?`,
+    args: [limit],
+  });
+  return r.rows.map(row => ({ label_id: String(row.label_id), sport_type: Number(row.sport_type) }));
+}
+
+/** Store elevation (when found) and mark the activity as fetched either way, so it is asked once. */
+export async function save_activity_detail(db: Client, label_id: string, detail: CorosActivityDetail | null): Promise<void> {
+  await ensure_coros_tables(db);
+  await db.execute({
+    sql: `UPDATE coros_activities SET
+            ascent_m = COALESCE(?, ascent_m), descent_m = COALESCE(?, descent_m),
+            detail_fetched_at = ?, updated_at = ?
+          WHERE label_id = ?`,
+    args: [detail?.ascent_m ?? null, detail?.descent_m ?? null, now_s(), now_s(), label_id],
+  });
+}
 
 export async function save_coros_days(db: Client, days: CorosDay[]): Promise<number> {
   if (days.length === 0) return 0;

@@ -1,6 +1,6 @@
 /**
  * API route: GET /api/coaching/sync-status
- * Whether the nightly health sync ran, and whether COROS is connected.
+ * Whether the daily health sync ran, and whether COROS is connected.
  * Admin only (proxy blocks guests from /api/coaching).
  */
 

@@ -1,7 +1,10 @@
 /**
  * API route: GET /api/coaching/trends
- * The nightly health job (Vercel cron, vercel.json, 09:00 UTC = 2-3am MT):
- *   1. Oura: fill wellness_cache for the last 7 past days.
+ * The daily health job (Vercel cron, vercel.json, 18:00 UTC = noon MDT / 11am MST).
+ * Midday, not night: Oura only uploads after Bill opens the app in the morning,
+ * and COROS uploads overnight sleep and no-signal rides the next morning.
+ *   1. Oura: re-fetch the last 7 past days (force), so late uploads replace
+ *      days that were cached empty or partial.
  *   2. COROS: pull the last 7 days through MCP into coros_daily / coros_activities.
  *   3. Trends: build yesterday's daily_metrics row, then 7/30-day trend_cache.
  * Each step runs even if an earlier one fails, and the run is logged to
@@ -33,7 +36,7 @@ export async function GET(request: NextRequest) {
   const steps: SyncStep[] = [];
 
   steps.push(await run_step('oura', async () => {
-    const r = await sync_oura({ days: 7 });
+    const r = await sync_oura({ days: 7, force: true });
     if (!r.connected) return { ok: false, detail: 'Oura is not connected' };
     const errors = r.errors.length > 0 ? `; errors: ${r.errors.join(', ')}` : '';
     return { ok: r.errors.length === 0, detail: `${r.synced} days synced, ${r.skipped} already cached${errors}` };
@@ -43,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   steps.push(await run_step('trends', async () => {
     const today = mt_epoch_day();
-    // Yesterday's data is complete by 2-3am MT
+    // Yesterday is complete by midday: its sleep and activity have uploaded
     const yesterday_epoch = today - 1;
     await populate_daily_metrics(epoch_day_to_date_str(yesterday_epoch), yesterday_epoch);
     const trends = await compute_trends(today);

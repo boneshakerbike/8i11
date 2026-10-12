@@ -39,7 +39,7 @@ export function is_read_tool(name: string): name is CorosReadTool {
 
 /**
  * The site origin a COROS connection is stored under. Production uses its fixed
- * domain, so the nightly cron (which has no browser and may arrive on another
+ * domain, so the daily cron (which has no browser and may arrive on another
  * host name) finds the same connection the owner made. Previews use their own
  * URL, since each one registers its own callback with COROS.
  */

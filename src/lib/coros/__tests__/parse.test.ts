@@ -127,3 +127,30 @@ describe('parse_sport_records', () => {
     expect(parse_sport_records('Sport Records (0 records)')).toEqual([]);
   });
 });
+
+describe('COROS "no value" placeholder', () => {
+  it('reads 65535 in any scale as missing', () => {
+    const text = F.SPORT_RECORDS.replace('Avg HR: 120 bpm', 'Avg HR: 65535 bpm').replace('Calories: 1,500 kcal', 'Calories: 655.35 kcal');
+    const ride = parse_sport_records(text)[1];
+    expect(ride.avg_hr).toBeNull();
+    expect(ride.calories).toBeNull();
+    expect(parse_fitness('VO2max: 6553.5')).toBeNull();
+  });
+});
+
+describe('parse_activity_detail', () => {
+  it('reads elevation gain and loss separately', async () => {
+    const { parse_activity_detail } = await import('@/lib/coros/parse');
+    expect(parse_activity_detail(F.ACTIVITY_DETAIL)).toEqual({ ascent_m: 1200, descent_m: 1250 });
+  });
+
+  it('converts feet and treats the placeholder as missing', async () => {
+    const { parse_activity_detail } = await import('@/lib/coros/parse');
+    expect(parse_activity_detail('Elevation Gain / Loss: 3281 ft / 655.35 ft')).toEqual({ ascent_m: 1000, descent_m: null });
+  });
+
+  it('returns null without an elevation line', async () => {
+    const { parse_activity_detail } = await import('@/lib/coros/parse');
+    expect(parse_activity_detail('Strength Activity Details\nSets: 12')).toBeNull();
+  });
+});

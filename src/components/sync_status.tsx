@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * One line saying whether the nightly health sync ran. Shown on the pages Bill
+ * One line saying whether the daily health sync ran. Shown on the pages Bill
  * opens anyway, so a stopped job is noticed without checking Vercel logs.
  */
 

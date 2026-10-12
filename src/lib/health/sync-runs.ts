@@ -1,5 +1,5 @@
 /**
- * Log of the nightly health sync, and the one-line status the Health and
+ * Log of the daily health sync, and the one-line status the Health and
  * COROS pages show. The point: nobody should need Vercel logs to know whether
  * the job ran. A missing run is as visible as a failed one.
  */
@@ -20,7 +20,7 @@ export interface SyncRun {
   steps: SyncStep[];
 }
 
-/** The nightly job runs at 09:00 UTC; allow a couple of hours of slack before calling it late. */
+/** The daily job runs at 18:00 UTC; allow a couple of hours of slack before calling it late. */
 export const STALE_AFTER_HOURS = 26;
 const KEEP_RUNS = 120;
 
@@ -75,7 +75,7 @@ export function sync_health(run: SyncRun | null, now_s: number): SyncHealth {
   if (!run) return { level: 'never', message: 'Daily sync has not run yet.' };
   const hours = Math.floor((now_s - run.finished_at) / 3600);
   if (hours >= STALE_AFTER_HOURS) {
-    return { level: 'late', message: `Daily sync last ran ${hours} hours ago (${mt_time(run.finished_at)}). It should run every night around 3am.` };
+    return { level: 'late', message: `Daily sync last ran ${hours} hours ago (${mt_time(run.finished_at)}). It should run every day around midday.` };
   }
   const failed = run.steps.filter(s => !s.ok);
   if (failed.length > 0) {

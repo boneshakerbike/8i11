@@ -1,7 +1,7 @@
 /**
  * Oura sync: fill wellness_cache for recent past days (Mountain Time), one
  * Oura API call per endpoint for the whole range. Used by POST /api/oura/sync
- * and by the nightly cron. Moved here unchanged from the route.
+ * and by the daily cron. Moved here unchanged from the route.
  */
 
 import {

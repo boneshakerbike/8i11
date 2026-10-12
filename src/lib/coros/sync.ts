@@ -12,10 +12,12 @@ import type { Client as McpClient } from '@modelcontextprotocol/sdk/client/index
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { call_coros_read_tool, coros_connection_status, describe_coros_error, with_coros, type CorosReadTool } from '@/lib/coros/mcp-client';
 import {
-  parse_daily_health, parse_fitness, parse_recovery, parse_resting_hr, parse_sleep_hrv,
-  parse_sport_records, parse_training_load, tool_text, type CorosActivity,
+  parse_activity_detail, parse_daily_health, parse_fitness, parse_recovery, parse_resting_hr,
+  parse_sleep_hrv, parse_sport_records, parse_training_load, tool_text, type CorosActivity,
 } from '@/lib/coros/parse';
-import { save_coros_activities, save_coros_days, type CorosDay } from '@/lib/coros/data';
+import {
+  activities_needing_detail, save_activity_detail, save_coros_activities, save_coros_days, type CorosDay,
+} from '@/lib/coros/data';
 import { shift_date } from '@/lib/coaching/day';
 import type { SyncStep } from '@/lib/health/sync-runs';
 
@@ -79,6 +81,37 @@ export async function pull_coros_week(client: McpClient, today: string): Promise
   return { days: [...by_date.values()], activities, warnings };
 }
 
+/** Most getActivityDetail calls per run; a normal day adds one to three activities. */
+export const MAX_DETAIL_CALLS = 10;
+
+const RIDE_TYPES = new Set([200, 202, 203, 204, 205, 9806]);
+
+/**
+ * Ask getActivityDetail once per outdoor activity for elevation gain and loss.
+ * Each activity is marked fetched after a successful call, found or not, so a
+ * ride without elevation is not asked again every day. A failed call is
+ * retried on the next run.
+ */
+export async function fill_activity_details(client: McpClient, db: LibsqlClient): Promise<{ filled: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  let filled = 0;
+  for (const a of await activities_needing_detail(db, MAX_DETAIL_CALLS)) {
+    const result = await call_coros_read_tool(client, 'getActivityDetail', { labelId: a.label_id, sportType: a.sport_type });
+    const text = tool_text(result);
+    if (result.isError) {
+      warnings.push(`getActivityDetail: ${text.slice(0, 120) || 'error'}`);
+      continue;
+    }
+    const detail = parse_activity_detail(text);
+    if (detail) filled++;
+    // An outdoor ride always has elevation, so a missing line there means the
+    // format changed. Walks and runs may legitimately have none.
+    else if (RIDE_TYPES.has(a.sport_type)) warnings.push(`getActivityDetail ${a.label_id}: ride has no elevation line (format change?)`);
+    await save_activity_detail(db, a.label_id, detail);
+  }
+  return { filled, warnings };
+}
+
 /** Pull and store. Never throws: the result says what happened. */
 export async function sync_coros(db: LibsqlClient, origin: string, today: string): Promise<SyncStep> {
   try {
@@ -87,11 +120,16 @@ export async function sync_coros(db: LibsqlClient, origin: string, today: string
     if (!(await coros_connection_status(origin)).connected) {
       return { step: 'coros', ok: false, detail: 'COROS is not connected (open COROS, then Connect COROS)' };
     }
-    const pull = await with_coros(origin, client => pull_coros_week(client, today));
-    const days = await save_coros_days(db, pull.days);
-    const activities = await save_coros_activities(db, pull.activities);
-    const detail = [`${days} days, ${activities} activities`, ...pull.warnings].join('; ');
-    return { step: 'coros', ok: pull.warnings.length === 0, detail };
+    const outcome = await with_coros(origin, async client => {
+      const pull = await pull_coros_week(client, today);
+      const days = await save_coros_days(db, pull.days);
+      const activities = await save_coros_activities(db, pull.activities);
+      const details = await fill_activity_details(client, db);
+      return { days, activities, details, warnings: [...pull.warnings, ...details.warnings] };
+    });
+    const elevation = outcome.details.filled > 0 ? `, elevation for ${outcome.details.filled}` : '';
+    const detail = [`${outcome.days} days, ${outcome.activities} activities${elevation}`, ...outcome.warnings].join('; ');
+    return { step: 'coros', ok: outcome.warnings.length === 0, detail };
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return { step: 'coros', ok: false, detail: 'COROS needs reconnecting (open COROS, then Connect COROS)' };
