@@ -114,11 +114,6 @@ export function getMetricBySlug(slug: string): MetricDef | undefined {
   return Object.values(METRIC_CONFIG).find(m => m.slug === slug);
 }
 
-/** Look up a MetricDef by its DB column name */
-export function getMetricByColumn(col: string): MetricDef | undefined {
-  return Object.values(METRIC_CONFIG).find(m => m.dbColumn === col);
-}
-
 export type TrendDirection = 'up' | 'down' | 'stable';
 export type HealthImpact = 'positive' | 'negative' | 'neutral';
 

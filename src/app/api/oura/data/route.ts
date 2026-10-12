@@ -18,6 +18,7 @@ import {
   get_wellness_range,
 } from '@/lib/db';
 import type { OuraTokens, WellnessSnapshot } from '@/lib/db';
+import { primary_sleep } from '@/lib/health/oura-derive';
 
 async function require_auth(request: NextRequest): Promise<NextResponse | null> {
   const token = await getToken({ req: request });
@@ -67,7 +68,7 @@ function extract_headline_scores(data: Record<string, unknown>): Partial<Wellnes
   const activity = data.daily_activity as Record<string, unknown> | null;
   const stress = data.daily_stress as Record<string, unknown> | null;
   const sleep_detail_arr = data.sleep_detail as Record<string, unknown>[] | null;
-  const sleep_detail = sleep_detail_arr?.find(s => s.type === 'long_sleep') ?? sleep_detail_arr?.[0];
+  const sleep_detail = primary_sleep(sleep_detail_arr);
   const spo2 = data.daily_spo2 as Record<string, unknown> | null;
 
   return {

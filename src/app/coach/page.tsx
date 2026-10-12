@@ -12,6 +12,7 @@ import Link from 'next/link';
 import NavTabs from '@/components/nav_tabs';
 import { mt_date_str, mt_epoch_day, epoch_day_to_date_str } from '@/lib/coaching/day';
 import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
+import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -346,10 +347,7 @@ export default function CoachPage() {
           m.sleep_score = scores.sleep ?? null;
 
           // Sleep durations come from sleep_detail (period data), not daily_sleep (scores only)
-          const sleep_detail_arr = ouraData.sleep_detail as Record<string, unknown>[] | null;
-          const sleep_period = Array.isArray(sleep_detail_arr) && sleep_detail_arr.length > 0
-            ? (sleep_detail_arr.find(s => s.type === 'long_sleep') ?? sleep_detail_arr[0])
-            : null;
+          const sleep_period = primary_sleep(ouraData.sleep_detail as Record<string, unknown>[] | null);
           if (sleep_period) {
             m.sleep_total = sleep_period.total_sleep_duration ? Math.round(Number(sleep_period.total_sleep_duration) / 60) : null;
             m.deep_sleep_min = sleep_period.deep_sleep_duration ? Math.round(Number(sleep_period.deep_sleep_duration) / 60) : null;
@@ -397,13 +395,8 @@ export default function CoachPage() {
         }
 
         // Estimate cardiovascular age from HRV + RHR (Umetani regression)
-        // hrv must be > 0 — Math.log(0) = -Infinity
-        if (m.hrv && m.hrv > 0 && m.resting_hr) {
-          const hrv_age = 107 - (12.5 * Math.log(m.hrv));
-          const rhr_age = 1.4 * m.resting_hr - 40;
-          const estimated = Math.round(0.65 * hrv_age + 0.35 * rhr_age);
-          if (isFinite(estimated)) m.cv_age = estimated;
-        }
+        const estimated_cv_age = estimate_cv_age(m.hrv, m.resting_hr);
+        if (estimated_cv_age != null) m.cv_age = estimated_cv_age;
 
         if (rwgpsActivities.length > 0) {
           m.yesterday_activities = rwgpsActivities.slice(0, 5).map((a: RwgpsActivity) => ({

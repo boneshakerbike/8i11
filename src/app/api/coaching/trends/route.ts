@@ -1,18 +1,19 @@
 /**
  * API route: GET /api/coaching/trends
  * Vercel cron endpoint — computes 7/30-day rolling averages.
- * Protected by CRON_SECRET header check.
- * Runs daily at 2am via vercel.json cron config.
+ * Protected by CRON_SECRET header check (src/lib/cron_auth.ts).
+ * Runs daily at 09:00 UTC (2-3am MT) via vercel.json cron config.
+ * daily_metrics is never pruned: longevity trends need years of history.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { compute_trends, cleanup_trend_cache, cleanup_daily_metrics, populate_daily_metrics } from '@/lib/coaching/db';
+import { compute_trends, cleanup_trend_cache, populate_daily_metrics } from '@/lib/coaching/db';
 import { mt_epoch_day, epoch_day_to_date_str } from '@/lib/coaching/day';
+import { is_cron_authorized } from '@/lib/cron_auth';
 
 export async function GET(request: NextRequest) {
   // Verify cron secret (Vercel sends this automatically for cron jobs)
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!is_cron_authorized(request.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -27,14 +28,13 @@ export async function GET(request: NextRequest) {
 
     const trend_result = await compute_trends(today);
     const trends_cleaned = await cleanup_trend_cache(today);
-    const metrics_cleaned = await cleanup_daily_metrics(today);
 
     return NextResponse.json({
       ok: true,
       date: today,
       populated_yesterday: populated,
       trends: trend_result,
-      cleaned: { trend_cache: trends_cleaned, daily_metrics: metrics_cleaned },
+      cleaned: { trend_cache: trends_cleaned },
     });
   } catch (error) {
     return NextResponse.json(
