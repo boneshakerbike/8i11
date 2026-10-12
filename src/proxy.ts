@@ -6,10 +6,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { safe_callback_url } from '@/lib/safe_callback';
+import { is_cron_authorized, is_cron_path } from '@/lib/cron_auth';
 
 export async function proxy(request: NextRequest) {
-  const token = await getToken({ req: request });
   const path = request.nextUrl.pathname;
+
+  // Vercel cron has no session cookie, so it was redirected to /login and the
+  // daily trends job never reached its route. The route checks the secret again.
+  if (is_cron_path(path) && is_cron_authorized(request.headers.get('authorization'))) {
+    return NextResponse.next();
+  }
+
+  const token = await getToken({ req: request });
 
   // /login is public, but a visitor who is already signed in goes straight on
   // to their callbackUrl instead of seeing the form again. This uses the same

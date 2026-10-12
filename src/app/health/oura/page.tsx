@@ -8,6 +8,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import NavTabs from '@/components/nav_tabs';
+import { primary_sleep } from '@/lib/health/oura-derive';
 
 interface OuraData {
   date: string;
@@ -62,17 +63,12 @@ function day_summary_label(summary: string | null | undefined): { label: string;
   return { label: summary, color: 'text-gray-400' };
 }
 
-function get_primary_sleep(sleep_detail: Record<string, unknown>[] | null): Record<string, unknown> | null {
-  if (!Array.isArray(sleep_detail) || sleep_detail.length === 0) return null;
-  return sleep_detail.find(s => s.type === 'long_sleep') ?? sleep_detail[0];
-}
-
 function compute_sleep_debt(snapshots: RangeSnapshot[]): { hours: number; minutes: number; surplus: boolean } | null {
   let total_deficit_seconds = 0;
   let days_with_data = 0;
 
   for (const snap of snapshots) {
-    const detail = get_primary_sleep(snap.sleep_detail);
+    const detail = primary_sleep(snap.sleep_detail);
     if (!detail) continue;
     const total_sleep = detail.total_sleep_duration as number | undefined;
     if (total_sleep == null) continue;
@@ -259,7 +255,7 @@ function OuraContent() {
   }
 
   const scores = data?.scores;
-  const sleep_period = data ? get_primary_sleep(data.sleep_detail) : null;
+  const sleep_period = data ? primary_sleep(data.sleep_detail) : null;
   const stress = data?.stress as Record<string, unknown> | null;
   const day_summary = stress?.day_summary as string | null | undefined;
   const summary_style = day_summary_label(day_summary);

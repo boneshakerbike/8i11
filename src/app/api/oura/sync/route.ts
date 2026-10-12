@@ -13,6 +13,7 @@ import {
   save_wellness_cache,
 } from '@/lib/db';
 import type { OuraTokens, WellnessSnapshot } from '@/lib/db';
+import { primary_sleep } from '@/lib/health/oura-derive';
 
 async function require_auth(request: NextRequest): Promise<NextResponse | null> {
   const token = await getToken({ req: request });
@@ -172,6 +173,8 @@ export async function POST(request: NextRequest) {
       const daily_stress = find_for_date('daily_stress') as Record<string, unknown> | null;
       const sleep_detail = find_for_date('sleep_detail') as Record<string, unknown>[] | null;
       const daily_spo2 = find_for_date('daily_spo2') as Record<string, unknown> | null;
+      // HRV and resting HR come from the night, not whichever period is first (a nap)
+      const night = primary_sleep(sleep_detail);
 
       const snapshot: WellnessSnapshot = {
         date: date_str,
@@ -180,10 +183,8 @@ export async function POST(request: NextRequest) {
         activity_score: (daily_activity?.score as number) ?? null,
         stress_high: (daily_stress?.stress_high as number) ?? null,
         recovery_high: (daily_stress?.recovery_high as number) ?? null,
-        hrv_average: (Array.isArray(sleep_detail) && sleep_detail[0])
-          ? (sleep_detail[0].average_hrv as number) ?? null : null,
-        resting_hr: (Array.isArray(sleep_detail) && sleep_detail[0])
-          ? (sleep_detail[0].lowest_heart_rate as number) ?? null : null,
+        hrv_average: (night?.average_hrv as number) ?? null,
+        resting_hr: (night?.lowest_heart_rate as number) ?? null,
         spo2_average: ((daily_spo2?.spo2_percentage as Record<string, unknown>)?.average as number) ?? null,
         steps: (daily_activity?.steps as number) ?? null,
         active_calories: (daily_activity?.active_calories as number) ?? null,

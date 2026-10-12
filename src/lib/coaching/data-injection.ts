@@ -7,6 +7,7 @@
 import { get_wellness_cache } from '@/lib/db';
 import { get_trends, get_last_known_manual_metrics, type TrendRow } from '@/lib/coaching/db';
 import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
+import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
 
 export interface ManualInputs {
   weight_lbs?: number;
@@ -188,10 +189,7 @@ export async function build_data_injection(
     const stress = oura.daily_stress as OuraStressDetail | null;
 
     // Sleep durations come from sleep_detail (period data), not daily_sleep (scores only)
-    const sleep_detail_arr = oura.sleep_detail as Record<string, unknown>[] | null;
-    const sleep_period = Array.isArray(sleep_detail_arr) && sleep_detail_arr.length > 0
-      ? (sleep_detail_arr.find(s => s.type === 'long_sleep') ?? sleep_detail_arr[0]) as OuraSleepDetail
-      : null;
+    const sleep_period = primary_sleep(oura.sleep_detail as Record<string, unknown>[] | null) as OuraSleepDetail | null;
 
     const readiness_val = readiness?.score ?? oura.readiness_score ?? null;
     const hrv_val = oura.hrv_average ?? null;
@@ -233,13 +231,10 @@ export async function build_data_injection(
     if (cv_age?.vascular_age) {
       lines.push(`Cardiovascular age: ${cv_age.vascular_age}`);
       metrics.cv_age = cv_age.vascular_age;
-    } else if (hrv_val && hrv_val > 0 && rhr_val) {
+    } else {
       // Estimate CV age from HRV + RHR (Umetani regression)
-      // hrv_val must be > 0 — Math.log(0) = -Infinity
-      const hrv_age = 107 - (12.5 * Math.log(hrv_val));
-      const rhr_age = 1.4 * rhr_val - 40;
-      const estimated_cv_age = Math.round(0.65 * hrv_age + 0.35 * rhr_age);
-      if (isFinite(estimated_cv_age)) {
+      const estimated_cv_age = estimate_cv_age(hrv_val, rhr_val);
+      if (estimated_cv_age != null) {
         lines.push(`Cardiovascular age: ~${estimated_cv_age} (estimated from HRV + RHR)`);
         metrics.cv_age = estimated_cv_age;
       }

@@ -10,6 +10,7 @@ import { getToken } from 'next-auth/jwt';
 import { get_client, ensure_schema } from '@/lib/db';
 import { METRIC_CONFIG, computeTrend, type MetricTrend } from '@/lib/coaching/metric-config';
 import { mt_epoch_day } from '@/lib/coaching/day';
+import { estimate_cv_age } from '@/lib/health/oura-derive';
 
 export async function POST(request: NextRequest) {
   const token = await getToken({ req: request });
@@ -39,15 +40,9 @@ export async function POST(request: NextRequest) {
           v != null && isFinite(v) ? v : null;
 
         // Estimate CV age from HRV + RHR if not provided directly
-        let cv_age = fin(liveMetrics.cardiovascular_age);
         const hrv = fin(liveMetrics.hrv_rmssd);
         const rhr = fin(liveMetrics.resting_hr);
-        if (cv_age == null && hrv != null && hrv > 0 && rhr != null) {
-          const hrv_age = 107 - (12.5 * Math.log(hrv));
-          const rhr_age = 1.4 * rhr - 40;
-          const est = Math.round(0.65 * hrv_age + 0.35 * rhr_age);
-          if (isFinite(est)) cv_age = est;
-        }
+        const cv_age = fin(liveMetrics.cardiovascular_age) ?? estimate_cv_age(hrv, rhr);
 
         await db.execute({
           sql: `INSERT OR IGNORE INTO daily_metrics (

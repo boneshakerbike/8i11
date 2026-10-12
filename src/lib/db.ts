@@ -1458,7 +1458,7 @@ export async function delete_oura_tokens(): Promise<boolean> {
   const db = get_client();
 
   const result = await db.execute('DELETE FROM oura_tokens WHERE id = 1');
-  // Clear personal_info cache so reconnect fetches fresh data
+  // Legacy table (no longer written): drop the cached profile on disconnect
   try { await db.execute('DELETE FROM oura_personal_info WHERE id = 1'); } catch { /* table may not exist */ }
   return result.rowsAffected > 0;
 }
@@ -1641,29 +1641,6 @@ export interface WellnessSnapshot {
   fetched_at: string;
 }
 
-export interface OuraPersonalInfo {
-  age: number | null;
-  weight: number | null;
-  height: number | null;
-  biological_sex: string | null;
-  email: string | null;
-  fetched_at: string;
-}
-
-export interface WellnessScores {
-  date: string;
-  sleep_score: number | null;
-  readiness_score: number | null;
-  activity_score: number | null;
-  stress_high: number | null;
-  recovery_high: number | null;
-  hrv_average: number | null;
-  resting_hr: number | null;
-  spo2_average: number | null;
-  steps: number | null;
-  active_calories: number | null;
-}
-
 async function init_wellness_schema(): Promise<void> {
   const db = get_client();
 
@@ -1836,91 +1813,6 @@ export async function get_wellness_range(
     sleep_time: row.sleep_time_json ? JSON.parse(row.sleep_time_json as string) : null,
     fetched_at: row.fetched_at as string,
   }));
-}
-
-export async function get_wellness_scores(
-  start_date: string,
-  end_date: string
-): Promise<WellnessScores[]> {
-  await ensure_wellness_schema();
-  const db = get_client();
-
-  const result = await db.execute({
-    sql: `SELECT date, sleep_score, readiness_score, activity_score,
-      stress_high, recovery_high, hrv_average, resting_hr,
-      spo2_average, steps, active_calories
-    FROM wellness_cache WHERE date >= ? AND date <= ? ORDER BY date ASC`,
-    args: [start_date, end_date]
-  });
-
-  return result.rows.map(row => ({
-    date: row.date as string,
-    sleep_score: row.sleep_score as number | null,
-    readiness_score: row.readiness_score as number | null,
-    activity_score: row.activity_score as number | null,
-    stress_high: row.stress_high as number | null,
-    recovery_high: row.recovery_high as number | null,
-    hrv_average: row.hrv_average as number | null,
-    resting_hr: row.resting_hr as number | null,
-    spo2_average: row.spo2_average as number | null,
-    steps: row.steps as number | null,
-    active_calories: row.active_calories as number | null,
-  }));
-}
-
-// ── Oura Personal Info ──────────────────────────────────────
-
-async function init_personal_info_schema(): Promise<void> {
-  const db = get_client();
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS oura_personal_info (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      age INTEGER,
-      weight REAL,
-      height REAL,
-      biological_sex TEXT,
-      email TEXT,
-      fetched_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-}
-
-let personal_info_schema_initialized = false;
-async function ensure_personal_info_schema(): Promise<void> {
-  if (!personal_info_schema_initialized) {
-    await init_personal_info_schema();
-    personal_info_schema_initialized = true;
-  }
-}
-
-export async function save_personal_info(info: OuraPersonalInfo): Promise<void> {
-  await ensure_personal_info_schema();
-  const db = get_client();
-  await db.execute({
-    sql: `INSERT INTO oura_personal_info (id, age, weight, height, biological_sex, email, fetched_at)
-          VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          ON CONFLICT(id) DO UPDATE SET
-            age = excluded.age, weight = excluded.weight, height = excluded.height,
-            biological_sex = excluded.biological_sex, email = excluded.email,
-            fetched_at = CURRENT_TIMESTAMP`,
-    args: [info.age, info.weight, info.height, info.biological_sex, info.email]
-  });
-}
-
-export async function get_personal_info(): Promise<OuraPersonalInfo | null> {
-  await ensure_personal_info_schema();
-  const db = get_client();
-  const result = await db.execute('SELECT * FROM oura_personal_info WHERE id = 1');
-  if (result.rows.length === 0) return null;
-  const row = result.rows[0];
-  return {
-    age: row.age as number | null,
-    weight: row.weight as number | null,
-    height: row.height as number | null,
-    biological_sex: (row.biological_sex as string) || null,
-    email: (row.email as string) || null,
-    fetched_at: row.fetched_at as string,
-  };
 }
 
 export async function is_wellness_cached(date: string): Promise<boolean> {

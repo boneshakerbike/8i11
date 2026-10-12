@@ -4,6 +4,7 @@
  */
 
 import { get_client, ensure_schema, get_wellness_cache, get_coros_data } from '@/lib/db';
+import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
 
 // Numeric columns in daily_metrics that get trend computation
 const TREND_METRICS = [
@@ -161,20 +162,6 @@ export async function cleanup_trend_cache(today: number): Promise<number> {
 }
 
 /**
- * Clean up daily_metrics entries older than 365 days
- */
-export async function cleanup_daily_metrics(today: number): Promise<number> {
-  await ensure_schema();
-  const db = get_client();
-  const cutoff = today - 365;
-  const result = await db.execute({
-    sql: `DELETE FROM daily_metrics WHERE date < ?`,
-    args: [cutoff],
-  });
-  return result.rowsAffected;
-}
-
-/**
  * Save a coaching session to coaching_history
  */
 export async function save_coaching_session(session: {
@@ -217,6 +204,28 @@ export interface InjectMetrics {
 const fin = (v: number | null | undefined): number | null =>
   v != null && isFinite(v) ? v : null;
 
+// Data columns written by populate_daily_metrics, in argument order.
+const DAILY_METRIC_COLUMNS = [
+  'sleep_duration_min', 'sleep_efficiency_pct', 'deep_sleep_min', 'rem_sleep_min',
+  'hrv_rmssd', 'resting_hr', 'readiness_score', 'cardiovascular_age', 'spo2_average',
+  'vo2_max', 'training_load_acute', 'training_load_chronic', 'recovery_pct',
+  'zone2_min_weekly', 'vo2max_intervals_weekly',
+  'weight_lbs', 'back_pain_scale', 'back_mobility_notes', 'bowel_status', 'bowel_scale', 'injury_notes',
+] as const;
+
+/**
+ * Merge, never replace: a value that is null in this run keeps what the row
+ * already has. INSERT OR REPLACE let the nightly cron (no manual inputs, often
+ * no Oura cache) blank the weight, back, bowel and notes saved with a session.
+ * Args: date, each DAILY_METRIC_COLUMNS value, created_at, updated_at.
+ */
+export const DAILY_METRICS_MERGE_SQL = `INSERT INTO daily_metrics (
+  date, ${DAILY_METRIC_COLUMNS.join(', ')}, created_at, updated_at
+) VALUES (?, ${DAILY_METRIC_COLUMNS.map(() => '?').join(', ')}, ?, ?)
+ON CONFLICT(date) DO UPDATE SET
+  ${DAILY_METRIC_COLUMNS.map(c => `${c} = COALESCE(excluded.${c}, daily_metrics.${c})`).join(',\n  ')},
+  updated_at = excluded.updated_at`;
+
 export async function populate_daily_metrics(
   date_str: string,
   epoch_day: number,
@@ -249,10 +258,7 @@ export async function populate_daily_metrics(
     readiness_score = oura.readiness_score;
 
     // Sleep durations come from sleep_detail (period data), not daily_sleep (scores only)
-    const sleep_detail_arr = oura.sleep_detail as { type?: string; total_sleep_duration?: number; efficiency?: number; deep_sleep_duration?: number; rem_sleep_duration?: number }[] | null;
-    const sleep_period = Array.isArray(sleep_detail_arr) && sleep_detail_arr.length > 0
-      ? (sleep_detail_arr.find(s => s.type === 'long_sleep') ?? sleep_detail_arr[0])
-      : null;
+    const sleep_period = primary_sleep(oura.sleep_detail as { type?: string; total_sleep_duration?: number; efficiency?: number; deep_sleep_duration?: number; rem_sleep_duration?: number }[] | null);
     if (sleep_period) {
       sleep_duration_min = sleep_period.total_sleep_duration ? Math.round(sleep_period.total_sleep_duration / 60) : null;
       sleep_efficiency_pct = sleep_period.efficiency ?? null;
@@ -280,13 +286,7 @@ export async function populate_daily_metrics(
   }
 
   // Estimate CV age from HRV + RHR if Oura didn't provide it directly
-  // hrv_rmssd must be > 0 — Math.log(0) = -Infinity which poisons the INSERT
-  if (cardiovascular_age == null && hrv_rmssd != null && hrv_rmssd > 0 && resting_hr != null) {
-    const hrv_age = 107 - (12.5 * Math.log(hrv_rmssd));
-    const rhr_age = 1.4 * resting_hr - 40;
-    const estimated = Math.round(0.65 * hrv_age + 0.35 * rhr_age);
-    if (isFinite(estimated)) cardiovascular_age = estimated;
-  }
+  if (cardiovascular_age == null) cardiovascular_age = estimate_cv_age(hrv_rmssd, resting_hr);
 
   // Extract COROS fields
   let vo2_max: number | null = null;
@@ -315,20 +315,13 @@ export async function populate_daily_metrics(
   }
 
   await db.execute({
-    sql: `INSERT OR REPLACE INTO daily_metrics (
-      date, sleep_duration_min, sleep_efficiency_pct, deep_sleep_min, rem_sleep_min,
-      hrv_rmssd, resting_hr, readiness_score, cardiovascular_age, spo2_average,
-      vo2_max, training_load_acute, training_load_chronic, recovery_pct,
-      zone2_min_weekly, vo2max_intervals_weekly,
-      weight_lbs, back_pain_scale, back_mobility_notes, bowel_status, bowel_scale, injury_notes,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: DAILY_METRICS_MERGE_SQL,
     args: [
       epoch_day,
       fin(sleep_duration_min), fin(sleep_efficiency_pct), fin(deep_sleep_min), fin(rem_sleep_min),
       fin(hrv_rmssd), fin(resting_hr), fin(readiness_score), fin(cardiovascular_age), fin(spo2_average),
       fin(vo2_max), fin(training_load_acute), fin(training_load_chronic), fin(recovery_pct),
-      null, null, // zone2_min_weekly, vo2max_intervals_weekly — computed separately
+      null, null, // zone2_min_weekly, vo2max_intervals_weekly: not computed yet
       fin(manual?.weight_lbs ?? null), fin(manual?.back_pain_scale ?? null),
       manual?.back_mobility_notes ?? null, manual?.bowel_status ?? null, fin(manual?.bowel_scale ?? null), manual?.injury_notes ?? null,
       now, now,
