@@ -6,7 +6,8 @@
  */
 
 import type { Client } from '@libsql/client';
-import type { CorosActivity, CorosActivityDetail } from '@/lib/coros/parse';
+import type { CorosActivity, CorosActivityDetail, CorosStrengthLaps } from '@/lib/coros/parse';
+import { STRENGTH_SPORT_TYPE } from '@/lib/coros/classify';
 
 /** One day of COROS data, assembled from several tools. Every field but date may be missing. */
 export interface CorosDay {
@@ -83,6 +84,9 @@ export async function ensure_coros_tables(db: Client): Promise<void> {
     'aerobic_te REAL',
     'anaerobic_te REAL',
     'training_focus TEXT',
+    'exercises TEXT',            // JSON array of exercise names (strength sessions)
+    'working_sets INTEGER',
+    'loaded_sets INTEGER',
   ]) {
     try {
       await db.execute(`ALTER TABLE coros_activities ADD COLUMN ${column}`);
@@ -104,17 +108,18 @@ export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 
 /**
  * Bump when the detail parser starts reading something new: activities read
  * by an older version are asked once more. 1 = elevation, 2 = + training
- * effect and focus.
+ * effect and focus. Strength sessions were first read at 2 (exercises from
+ * queryActivityLapData); a bump re-asks them too, a few calls once.
  */
 export const DETAIL_VERSION = 2;
 
-/** Activities not yet read by the current detail parser, newest first. */
+/** Activities not yet read by the current detail parser, newest first. Strength sessions included. */
 export async function activities_needing_detail(db: Client, limit: number): Promise<Array<{ label_id: string; sport_type: number }>> {
   await ensure_coros_tables(db);
   const r = await db.execute({
     sql: `SELECT label_id, sport_type FROM coros_activities
           WHERE COALESCE(detail_version, CASE WHEN detail_fetched_at IS NULL THEN 0 ELSE 1 END) < ?
-            AND sport_type IN (${DETAIL_SPORT_TYPES.join(', ')})
+            AND sport_type IN (${[...DETAIL_SPORT_TYPES, STRENGTH_SPORT_TYPE].join(', ')})
           ORDER BY start_ts DESC LIMIT ?`,
     args: [DETAIL_VERSION, limit],
   });
@@ -134,6 +139,22 @@ export async function save_activity_detail(db: Client, label_id: string, detail:
     args: [
       detail?.ascent_m ?? null, detail?.descent_m ?? null,
       detail?.aerobic_te ?? null, detail?.anaerobic_te ?? null, detail?.training_focus ?? null,
+      now_s(), DETAIL_VERSION, now_s(), label_id,
+    ],
+  });
+}
+
+/** Store a strength session's exercises and mark it read, found or not, so it is asked once. */
+export async function save_strength_laps(db: Client, label_id: string, laps: CorosStrengthLaps | null): Promise<void> {
+  await ensure_coros_tables(db);
+  await db.execute({
+    sql: `UPDATE coros_activities SET
+            exercises = COALESCE(?, exercises), working_sets = COALESCE(?, working_sets),
+            loaded_sets = COALESCE(?, loaded_sets),
+            detail_fetched_at = ?, detail_version = ?, updated_at = ?
+          WHERE label_id = ?`,
+    args: [
+      laps ? JSON.stringify(laps.exercises) : null, laps?.working_sets ?? null, laps?.loaded_sets ?? null,
       now_s(), DETAIL_VERSION, now_s(), label_id,
     ],
   });
@@ -175,7 +196,21 @@ export async function get_coros_days(db: Client, start: string, end: string): Pr
   });
 }
 
-export type StoredCorosActivity = CorosActivity & CorosActivityDetail;
+export type StoredCorosActivity = CorosActivity & CorosActivityDetail & {
+  exercises: string[] | null;
+  working_sets: number | null;
+  loaded_sets: number | null;
+};
+
+function exercise_list(value: unknown): string[] | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const list = JSON.parse(value);
+    return Array.isArray(list) ? list.map(String) : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function get_coros_activities(db: Client, start: string, end: string): Promise<StoredCorosActivity[]> {
   await ensure_coros_tables(db);
@@ -199,5 +234,8 @@ export async function get_coros_activities(db: Client, start: string, end: strin
     aerobic_te: row.aerobic_te as number | null,
     anaerobic_te: row.anaerobic_te as number | null,
     training_focus: row.training_focus as string | null,
+    exercises: exercise_list(row.exercises),
+    working_sets: row.working_sets as number | null,
+    loaded_sets: row.loaded_sets as number | null,
   }));
 }

@@ -263,3 +263,64 @@ export function parse_activity_detail(text: string): CorosActivityDetail | null 
   };
   return Object.values(detail).some(v => v != null) ? detail : null;
 }
+
+/** A strength session's exercises, read from queryActivityLapData. */
+export interface CorosStrengthLaps {
+  exercises: string[];  // distinct exercise names, in the order done
+  working_sets: number; // sets across all exercises (COROS's own "Sets" total)
+  loaded_sets: number;  // of those, sets done with added weight
+}
+
+interface StrengthLap {
+  exerciseNameKey?: unknown;
+  sets?: unknown;
+  weight?: unknown;
+}
+
+/**
+ * queryActivityLapData for a strength session. Unlike the other tools it
+ * answers in JSON: lapGroups[].laps[]. Each exercise appears as its effort and
+ * rest rows (sets 0), then one summary row (sets > 0); "Rest" summary rows are
+ * the breaks between exercises. Summary sets add up to COROS's "Sets" total
+ * (checked on a real session, 2026-10-12). The weight unit is not confirmed,
+ * so only "weight above 0" is read, from the summary row or its effort rows.
+ * Returns null when the shape differs, including laps with no summary row.
+ */
+export function parse_strength_laps(text: string): CorosStrengthLaps | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const groups = (data as { lapGroups?: unknown } | null)?.lapGroups;
+  if (!Array.isArray(groups)) return null;
+
+  const out: CorosStrengthLaps = { exercises: [], working_sets: 0, loaded_sets: 0 };
+  let laps_seen = 0;
+  let summaries_seen = 0;
+  for (const group of groups) {
+    const laps = (group as { laps?: unknown } | null)?.laps;
+    if (!Array.isArray(laps)) return null;
+    let effort_loaded = false; // an effort row of the current exercise carried weight
+    for (const lap of laps as StrengthLap[]) {
+      laps_seen++;
+      const name = typeof lap?.exerciseNameKey === 'string' ? lap.exerciseNameKey.trim() : '';
+      const sets = Number(lap?.sets) || 0;
+      const weight = Number(lap?.weight);
+      const loaded = weight > 0 && !PLACEHOLDERS.has(weight);
+      if (sets <= 0) {
+        if (loaded) effort_loaded = true;
+        continue;
+      }
+      summaries_seen++;
+      if (name !== 'Rest') {
+        if (name && !out.exercises.includes(name)) out.exercises.push(name);
+        out.working_sets += sets;
+        if (loaded || effort_loaded) out.loaded_sets += sets;
+      }
+      effort_loaded = false;
+    }
+  }
+  return laps_seen > 0 && summaries_seen === 0 ? null : out;
+}

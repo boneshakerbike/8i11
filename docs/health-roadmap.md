@@ -84,6 +84,7 @@ Done in this branch; see Status.
 - COROS fills a missing value with 65535 (seen as 655.35 for efficiency factor). Parsers treat 65535, 6553.5 and 655.35 as missing.
 - `getActivityDetail` (needs `labelId` and `sportType`) reports elevation gain and loss separately. Ascent and descent can be stored apart, which fixes the old "descent read as climbing" bug at the source.
 - `getActivityDetail` also reports COROS's intensity read: "Aerobic TE", "Anaerobic TE" and "Training Focus" (Oct 10 ride: 4.7, 1.6, "Base"). An interval session is recognized from it automatically (`src/lib/coros/classify.ts`): a high-intensity focus, or an anaerobic TE of 3.0 or more. The label wording will be confirmed on the first real interval ride.
+- `getActivityDetail` on a strength session (402) has no exercises. `queryActivityLapData` does, and answers in JSON rather than text: `lapGroups[].laps[]` with `exerciseNameKey`, `sets`, `reps`, `time` and `weight`. Each exercise has effort and rest rows (`sets` 0), then one summary row (`sets` above 0); "Rest" summary rows are the breaks. On the Oct 8 session the summary rows add up to COROS's own total (17 sets, 1:19:55). The weight unit is not confirmed yet; every weight was 0 that day.
 - Custom sports (9800-9807) get a generic detail with no elevation, max speed or training effect. Bill's e-MTB rides logged as custom "Missoula E MTB" (9806) therefore have no climbing data. The built-in Mountain E-Bike mode (205) reports the full set, so it's the better watch mode for e-MTB rides. Rides logged as 9806 still count as ride days.
 
 #### When the data actually arrives (Bill, 2026-10-12)
@@ -146,7 +147,7 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - resting HR and HRV: against Bill's own 90-day normal
   - weight: never above 195 lb, under 190 lb at least once a week
 
-  Intervals and heavy strength are detected from COROS automatically, not logged. The coach must nudge framework items that are behind; it never did for two months.
+  Intervals and heavy strength are detected from COROS automatically, not logged (`src/lib/coros/classify.ts`). Heavy strength means at least 6 working sets with added weight; a session with fewer is mobility (the Oct 8 session: 17 sets, none loaded). Confirm on the first real heavy session. The coach must nudge framework items that are behind; it never did for two months.
 - 2026-10-12: COROS has all rides, so it is the coach's training source. Ride with GPS stays as a drill-down page. Health is the coach plus access to all the data, with home page drill-downs kept. COROS stays read-only for now; writing comes later behind Approve.
 
 ## Needed from Bill
@@ -182,7 +183,8 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - Daily job at midday (18:00 UTC): Oura re-fetch of 7 days (moved to `src/lib/health/oura-sync.ts`), then COROS, then trends. Each step runs even if another fails; every run is logged in `health_sync_runs`.
   - "Daily sync ran ..." line on the Coach and COROS pages (`src/components/sync_status.tsx`). It turns red if the job is over 26 hours late, a step failed, or COROS is disconnected.
   - COROS page rebuilt on the synced data, with Sync now. The Chrome-scrape prompt, the paste box, `/api/coros/save` and the blanket `api/coros` proxy exemption are gone. `daily_metrics` reads COROS from `coros_daily`.
-  - Ascent and descent per outdoor activity from `getActivityDetail` ("Elevation Gain / Loss: X m / Y m"): asked once per activity, at most 10 per run, never for strength. A ride with no elevation line is reported as a possible format change.
+  - Ascent and descent per outdoor activity from `getActivityDetail` ("Elevation Gain / Loss: X m / Y m"): asked once per activity, at most 10 per run. A ride with no elevation line is reported as a possible format change.
+  - Strength sessions: exercises, working sets and loaded sets from `queryActivityLapData`, asked once per session within the same 10-per-run cap (about 5 to 8 calls a week). The COROS page labels each one "Heavy strength" or "Mobility" and lists the exercises. Lap data it cannot read is reported once as a possible format change.
   - Preview test 2026-10-12: Connect, then Sync now returned "7 days, 14 activities" with no warnings.
 
 ### Next
