@@ -28,7 +28,7 @@ function CorosMcpContent() {
   const [status_error, setStatusError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [output, setOutput] = useState('')
-  const [tool, setTool] = useState('querySleepData')
+  const [tool, setTool] = useState('querySleepOverview')
   const [args_text, setArgsText] = useState('{}')
   const [copied, setCopied] = useState(false)
 

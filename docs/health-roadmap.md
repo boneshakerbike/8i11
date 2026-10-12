@@ -71,9 +71,20 @@ COROS documents ChatGPT, Codex and Claude as clients. It is unconfirmed that it 
 
 Done in this branch; see Status.
 
+#### Phase 0 findings (preview test, 2026-10-12): PASSED
+
+- COROS accepted our self-registered OAuth client on a preview URL. Sign-in, token exchange and tool calls all worked.
+- The server offers 33 tools, read and write. The sleep tool is `querySleepOverview`; there is no `querySleepData`.
+- **Output is human-readable text, not JSON.** Each result is one `text` block holding a JSON-encoded string (parse the string first, then the lines). Phase 2 needs a line parser per tool, tested against sanitized fixtures; store the raw text too.
+- **Dates are wake-up days:** the sleep of night D is filed under D+1, the same convention as Oura's `day`. "Last night" is today's date in both sources.
+- Date parameters are `yyyyMMdd` strings. `querySleepHrv` requires `startDate`, `endDate` and `days` (max 7). Health queries return at most 7 days per call.
+- `querySportRecords` returns `labelId` and `sportType` per activity; `getActivityDetail` needs both. Sport codes seen: 204 mountain bike, 402 strength, 900 walk, 9806 custom outdoor (one e-MTB ride was logged this way). Ride pillars must count 200 to 205 plus 9806.
+- COROS reports its own sleep HRV, resting HR and a "HRV Baseline" that differ from Oura's numbers. Keep one source per metric: Oura for recovery (HRV, resting HR, sleep), COROS for training.
+- Activity results include GPS start coordinates. Do not commit raw results; fixtures must be sanitized.
+
 ### Phase 2: COROS through MCP
 
-- Read-only tool allowlist: `querySleepData`, `querySleepHrv`, `queryRestingHeartRate`, `queryRecoveryStatus`, `queryFitnessAssessmentOverview`, `querySportRecords`, `getActivityDetail`, `queryTrainingLoadAssessment` (display only).
+- Read-only tool allowlist: `queryDailyHealthData`, `querySleepOverview`, `querySleepHrv`, `queryRestingHeartRate`, `queryRecoveryStatus`, `queryFitnessAssessmentOverview`, `querySportRecords`, `getActivityDetail`, `queryTrainingLoadAssessment` (display only).
 - Tables `coros_daily` and `coros_activities` (ascent and descent kept separate). `coros_data` stays readable, no new writes.
 - The one daily cron syncs Oura, then COROS, then computes trends. "Sync now" button on the COROS page.
 - Retire the Chrome prompt, the paste box, `/api/coros/save` and the blanket `api/coros` proxy exemption.
@@ -124,13 +135,11 @@ Done in this branch; see Status.
 
 - Phase 1 merged in #296 (2026-10-12). A calendar reminder checks the first cron run on 2026-10-13.
 
-### In progress
-
-- Phase 0: code built, awaiting Bill's preview test (Admin PIN, Connect COROS, Run 7-day sample, paste the output).
+- Phase 0 (#297): COROS sign-in and read-only probe. Passed on the preview 2026-10-12; findings above.
 
 ### Next
 
-- Phase 2, once Phase 0 passes.
+- Phase 2: daily COROS sync (parsers, tables, cron), plus a visible "last daily sync" line so nobody needs Vercel logs to know the job ran.
 
 ## Regenerating the session dump
 

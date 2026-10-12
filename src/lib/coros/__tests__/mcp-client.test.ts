@@ -22,7 +22,7 @@ describe('COROS read-only allowlist', () => {
 
   it('passes an allowed tool through', async () => {
     const client = { callTool: async (req: { name: string }) => ({ content: [{ type: 'text', text: req.name }] }) } as unknown as Client;
-    const result = await call_coros_read_tool(client, 'querySleepData', {});
-    expect(result.content[0]).toEqual({ type: 'text', text: 'querySleepData' });
+    const result = await call_coros_read_tool(client, 'querySleepOverview', {});
+    expect(result.content[0]).toEqual({ type: 'text', text: 'querySleepOverview' });
   });
 });

@@ -21,7 +21,7 @@ export const COROS_MCP_URL = process.env.COROS_MCP_URL || 'https://mcpus.coros.c
 
 export const COROS_READ_TOOLS = [
   'queryDailyHealthData',
-  'querySleepData',
+  'querySleepOverview',
   'querySleepHrv',
   'queryRestingHeartRate',
   'queryRecoveryStatus',
