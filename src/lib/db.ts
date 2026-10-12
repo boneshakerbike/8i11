@@ -9,6 +9,7 @@ import { createClient, Client } from '@libsql/client';
 import { StoryAudit } from '@/lib/story_audit';
 import { normalize_title, TitlePair } from '@/lib/substack_titles';
 import type { VoiceExemplar } from '@/lib/voice_corpus';
+import { primary_sleep } from '@/lib/health/oura-derive';
 
 // Detect if we're using Turso (production) or SQLite (local)
 const is_turso = !!process.env.TURSO_DATABASE_URL;
@@ -1766,6 +1767,48 @@ export async function get_wellness_range(
     sleep_time: row.sleep_time_json ? JSON.parse(row.sleep_time_json as string) : null,
     fetched_at: row.fetched_at as string,
   }));
+}
+
+/**
+ * Nightly HRV and resting HR only, for baselines. Reads two columns instead of
+ * the large JSON blobs get_wellness_range returns, so 97 days stay cheap.
+ */
+export async function get_wellness_vitals(
+  start_date: string,
+  end_date: string
+): Promise<Array<{ date: string; hrv: number | null; resting_hr: number | null }>> {
+  await ensure_wellness_schema();
+  const result = await get_client().execute({
+    sql: 'SELECT date, hrv_average, resting_hr FROM wellness_cache WHERE date >= ? AND date <= ? ORDER BY date ASC',
+    args: [start_date, end_date]
+  });
+  return result.rows.map(row => ({
+    date: row.date as string,
+    hrv: row.hrv_average as number | null,
+    resting_hr: row.resting_hr as number | null,
+  }));
+}
+
+/** Minutes asleep per wake-up day, from the night's main sleep period. */
+export async function get_wellness_sleep_minutes(
+  start_date: string,
+  end_date: string
+): Promise<Array<{ date: string; total_min: number | null }>> {
+  await ensure_wellness_schema();
+  const result = await get_client().execute({
+    sql: 'SELECT date, sleep_json FROM wellness_cache WHERE date >= ? AND date <= ? ORDER BY date ASC',
+    args: [start_date, end_date]
+  });
+  return result.rows.map(row => {
+    let periods: unknown = null;
+    try {
+      periods = row.sleep_json ? JSON.parse(row.sleep_json as string) : null;
+    } catch {
+      // Unreadable cache row: no sleep for that day
+    }
+    const seconds = Number(primary_sleep(Array.isArray(periods) ? periods : null)?.total_sleep_duration);
+    return { date: row.date as string, total_min: seconds > 0 ? Math.round(seconds / 60) : null };
+  });
 }
 
 export async function is_wellness_cached(date: string): Promise<boolean> {

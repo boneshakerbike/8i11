@@ -31,3 +31,8 @@ export function shift_date(date: string, n: number): string {
 export function epoch_day_to_date_str(epoch_day: number): string {
   return new Date(epoch_day * DAY_MS).toISOString().split('T')[0];
 }
+
+/** Convert a YYYY-MM-DD calendar date to its epoch day */
+export function date_str_to_epoch_day(date: string): number {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / DAY_MS);
+}
