@@ -184,7 +184,8 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - "Daily sync ran ..." line on the Coach and COROS pages (`src/components/sync_status.tsx`). It turns red if the job is over 26 hours late, a step failed, or COROS is disconnected.
   - COROS page rebuilt on the synced data, with Sync now. The Chrome-scrape prompt, the paste box, `/api/coros/save` and the blanket `api/coros` proxy exemption are gone. `daily_metrics` reads COROS from `coros_daily`.
   - Ascent and descent per outdoor activity from `getActivityDetail` ("Elevation Gain / Loss: X m / Y m"): asked once per activity, at most 10 per run. A ride with no elevation line is reported as a possible format change.
-  - Strength sessions: exercises, working sets and loaded sets from `queryActivityLapData`, asked once per session within the same 10-per-run cap (about 5 to 8 calls a week). The COROS page labels each one "Heavy strength" or "Mobility" and lists the exercises. Lap data it cannot read is reported once as a possible format change.
+  - Strength sessions: exercises, working sets and loaded sets from `queryActivityLapData`, asked once per session within the same 10-per-run cap (about 5 to 8 calls a week). The COROS page labels each one "Heavy strength" or "Mobility" and lists the exercises, or says "Exercises not read yet" / "No exercise list in COROS". Lap data it cannot read is reported once as a possible format change, and so is an empty lap list on a session COROS counted sets for.
+  - When more activities need a detail or lap call than the 10-per-run cap allows, the sync line says "N more next run" (first seen 2026-10-12: two strength sessions waited silently).
   - Preview test 2026-10-12: Connect, then Sync now returned "7 days, 14 activities" with no warnings.
 
 ### Next

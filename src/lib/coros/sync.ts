@@ -94,13 +94,15 @@ const RIDE_TYPES = new Set([200, 202, 203, 204, 205]);
  * gain and loss, training effect), queryActivityLapData for a strength session
  * (its exercises, to tell heavy lifting from mobility). Each activity is
  * marked fetched after a successful call, found or not, so it is not asked
- * again every day. A failed call is retried on the next run.
+ * again every day. A failed call is retried on the next run. Past the per-run
+ * cap, the rest wait for the next run and `waiting` says how many.
  */
-export async function fill_activity_details(client: McpClient, db: LibsqlClient): Promise<{ filled: number; strength: number; warnings: string[] }> {
+export async function fill_activity_details(client: McpClient, db: LibsqlClient): Promise<{ filled: number; strength: number; waiting: number; warnings: string[] }> {
   const warnings: string[] = [];
   let filled = 0;
   let strength = 0;
-  for (const a of await activities_needing_detail(db, MAX_DETAIL_CALLS)) {
+  const queue = await activities_needing_detail(db);
+  for (const a of queue.slice(0, MAX_DETAIL_CALLS)) {
     const is_strength = a.sport_type === STRENGTH_SPORT_TYPE;
     const tool = is_strength ? 'queryActivityLapData' : 'getActivityDetail';
     const result = await call_coros_read_tool(client, tool, { labelId: a.label_id, sportType: a.sport_type });
@@ -113,6 +115,8 @@ export async function fill_activity_details(client: McpClient, db: LibsqlClient)
       const laps = parse_strength_laps(text);
       if (!laps) warnings.push(`queryActivityLapData ${a.label_id}: exercises not readable (format change?)`);
       else if (laps.working_sets > 0) strength++;
+      // COROS's own record counted sets, so an empty lap list is unexpected
+      else if ((a.sets ?? 0) > 0) warnings.push(`queryActivityLapData ${a.label_id}: COROS lists ${a.sets} sets but the lap data has none`);
       await save_strength_laps(db, a.label_id, laps);
       continue;
     }
@@ -123,7 +127,7 @@ export async function fill_activity_details(client: McpClient, db: LibsqlClient)
     else if (RIDE_TYPES.has(a.sport_type)) warnings.push(`getActivityDetail ${a.label_id}: ride has no elevation line (format change?)`);
     await save_activity_detail(db, a.label_id, detail);
   }
-  return { filled, strength, warnings };
+  return { filled, strength, waiting: Math.max(0, queue.length - MAX_DETAIL_CALLS), warnings };
 }
 
 /** Pull and store. Never throws: the result says what happened. */
@@ -143,7 +147,8 @@ export async function sync_coros(db: LibsqlClient, origin: string, today: string
     });
     const elevation = outcome.details.filled > 0 ? `, elevation for ${outcome.details.filled}` : '';
     const exercises = outcome.details.strength > 0 ? `, exercises for ${outcome.details.strength}` : '';
-    const detail = [`${outcome.days} days, ${outcome.activities} activities${elevation}${exercises}`, ...outcome.warnings].join('; ');
+    const waiting = outcome.details.waiting > 0 ? `, ${outcome.details.waiting} more next run` : '';
+    const detail = [`${outcome.days} days, ${outcome.activities} activities${elevation}${exercises}${waiting}`, ...outcome.warnings].join('; ');
     return { step: 'coros', ok: outcome.warnings.length === 0, detail };
   } catch (err) {
     if (err instanceof UnauthorizedError) {
