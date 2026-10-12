@@ -104,7 +104,7 @@ export async function fill_activity_details(client: McpClient, db: LibsqlClient)
       continue;
     }
     const detail = parse_activity_detail(text);
-    if (detail) filled++;
+    if (detail?.ascent_m != null) filled++;
     // An outdoor ride always has elevation, so a missing line there means the
     // format changed. Walks and runs may legitimately have none.
     else if (RIDE_TYPES.has(a.sport_type)) warnings.push(`getActivityDetail ${a.label_id}: ride has no elevation line (format change?)`);

@@ -83,6 +83,7 @@ Done in this branch; see Status.
 - Activity results include GPS start coordinates. Do not commit raw results; fixtures must be sanitized.
 - COROS fills a missing value with 65535 (seen as 655.35 for efficiency factor). Parsers treat 65535, 6553.5 and 655.35 as missing.
 - `getActivityDetail` (needs `labelId` and `sportType`) reports elevation gain and loss separately. Ascent and descent can be stored apart, which fixes the old "descent read as climbing" bug at the source.
+- `getActivityDetail` also reports COROS's intensity read: "Aerobic TE", "Anaerobic TE" and "Training Focus" (Oct 10 ride: 4.7, 1.6, "Base"). An interval session is recognized from it automatically (`src/lib/coros/classify.ts`): a high-intensity focus, or an anaerobic TE of 3.0 or more. The label wording will be confirmed on the first real interval ride.
 - Custom sports (9800-9807) get a generic detail with no elevation, max speed or training effect. Bill's e-MTB rides logged as custom "Missoula E MTB" (9806) therefore have no climbing data. The built-in Mountain E-Bike mode (205) reports the full set, so it's the better watch mode for e-MTB rides. Rides logged as 9806 still count as ride days.
 
 #### When the data actually arrives (Bill, 2026-10-12)
@@ -118,9 +119,34 @@ Done in this branch; see Status.
 
 - COROS workout writing behind an Approve button (`createScheduledWorkout`, cycling only).
 
+## Resource budget (free tiers)
+
+Standing rule: stay inside the free tiers. Every change states what it adds.
+
+| Service | Free limit | Health features use |
+|---|---|---|
+| Vercel cron (Hobby) | 2 jobs, at most daily | 1 job, daily at 18:00 UTC |
+| Vercel functions (Hobby) | 1M invocations/month | ~30/day (page loads, one daily run, Sync now) |
+| Turso (free) | 500M rows read, 10M rows written, 5 GB/month; over the limit, queries are BLOCKED. A read is a row scan. | <100 rows written/day; reads are primary-key or indexed range reads |
+| COROS MCP | free; FIT files 50/day | ~8 calls/day plus at most 10 detail or lap lookups per run; no FIT files |
+| Oura API | 5,000 requests per 5 minutes | ~13/day |
+| GitHub Actions | free for a public repo | lint + tests per push |
+| Claude API (paid) | n/a | coach: 1-3 turns/day, cents |
+
 ## Decisions locked with Bill
 
 - 2026-07-03: weight input stays typed; blank on the road is intentional. Back and bowel are 4-level tap selectors stored numerically (shipped #244). The notes field stays as is.
+- 2026-10-12 (Phase 3 inputs): the core is Drive `Health/Personal-Health-Ledger/Vetted-Longevity-Research/2026-04-02-Longevity-Coaching-Framework.md` (15 Levers), stored in the app database, never in this public repo. The framework overrides Bill's wishes where they differ. The coach moves to Opus 5.5 at low effort. Weekly checks:
+  - ride time at least 7 h
+  - a ride every day (MTB, e-MTB, gravel)
+  - yoga/mobility every work day
+  - heavy strength 3x/week
+  - 1 interval session/week
+  - sleep: 8 h average goal, 7 h asleep minimum
+  - resting HR and HRV: against Bill's own 90-day normal
+  - weight: never above 195 lb, under 190 lb at least once a week
+
+  Intervals and heavy strength are detected from COROS automatically, not logged. The coach must nudge framework items that are behind; it never did for two months.
 - 2026-10-12: COROS has all rides, so it is the coach's training source. Ride with GPS stays as a drill-down page. Health is the coach plus access to all the data, with home page drill-downs kept. COROS stays read-only for now; writing comes later behind Approve.
 
 ## Needed from Bill

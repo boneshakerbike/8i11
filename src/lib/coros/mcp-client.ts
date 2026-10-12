@@ -29,6 +29,9 @@ export const COROS_READ_TOOLS = [
   'queryTrainingLoadAssessment',
   'querySportRecords',
   'getActivityDetail',
+  // Per-set strength exercise names (COROS's tool description); how heavy
+  // strength is told apart from yoga, since getActivityDetail has only a set count.
+  'queryActivityLapData',
 ] as const;
 
 export type CorosReadTool = (typeof COROS_READ_TOOLS)[number];
