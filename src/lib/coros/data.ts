@@ -76,11 +76,19 @@ export async function ensure_coros_tables(db: Client): Promise<void> {
     )`,
     'CREATE INDEX IF NOT EXISTS idx_coros_activities_date ON coros_activities(date)',
   ], 'write');
-  // Added after the table first shipped: when getActivityDetail was last called.
-  try {
-    await db.execute('ALTER TABLE coros_activities ADD COLUMN detail_fetched_at INTEGER');
-  } catch {
-    // Column already exists
+  // Added after the table first shipped. ALTER fails harmlessly once a column exists.
+  for (const column of [
+    'detail_fetched_at INTEGER', // when getActivityDetail was last read
+    'detail_version INTEGER',    // DETAIL_VERSION of the parser that read it
+    'aerobic_te REAL',
+    'anaerobic_te REAL',
+    'training_focus TEXT',
+  ]) {
+    try {
+      await db.execute(`ALTER TABLE coros_activities ADD COLUMN ${column}`);
+    } catch {
+      // Column already exists
+    }
   }
   ensured.add(db);
 }
@@ -93,27 +101,41 @@ export async function ensure_coros_tables(db: Client): Promise<void> {
  */
 export const DETAIL_SPORT_TYPES = [100, 102, 103, 104, 105, 200, 202, 203, 204, 205, 900] as const;
 
-/** Activities never asked for detail yet, newest first. */
+/**
+ * Bump when the detail parser starts reading something new: activities read
+ * by an older version are asked once more. 1 = elevation, 2 = + training
+ * effect and focus.
+ */
+export const DETAIL_VERSION = 2;
+
+/** Activities not yet read by the current detail parser, newest first. */
 export async function activities_needing_detail(db: Client, limit: number): Promise<Array<{ label_id: string; sport_type: number }>> {
   await ensure_coros_tables(db);
   const r = await db.execute({
     sql: `SELECT label_id, sport_type FROM coros_activities
-          WHERE detail_fetched_at IS NULL AND sport_type IN (${DETAIL_SPORT_TYPES.join(', ')})
+          WHERE COALESCE(detail_version, CASE WHEN detail_fetched_at IS NULL THEN 0 ELSE 1 END) < ?
+            AND sport_type IN (${DETAIL_SPORT_TYPES.join(', ')})
           ORDER BY start_ts DESC LIMIT ?`,
-    args: [limit],
+    args: [DETAIL_VERSION, limit],
   });
   return r.rows.map(row => ({ label_id: String(row.label_id), sport_type: Number(row.sport_type) }));
 }
 
-/** Store elevation (when found) and mark the activity as fetched either way, so it is asked once. */
+/** Store what the detail had and mark it read by this parser version, found or not, so it is asked once. */
 export async function save_activity_detail(db: Client, label_id: string, detail: CorosActivityDetail | null): Promise<void> {
   await ensure_coros_tables(db);
   await db.execute({
     sql: `UPDATE coros_activities SET
             ascent_m = COALESCE(?, ascent_m), descent_m = COALESCE(?, descent_m),
-            detail_fetched_at = ?, updated_at = ?
+            aerobic_te = COALESCE(?, aerobic_te), anaerobic_te = COALESCE(?, anaerobic_te),
+            training_focus = COALESCE(?, training_focus),
+            detail_fetched_at = ?, detail_version = ?, updated_at = ?
           WHERE label_id = ?`,
-    args: [detail?.ascent_m ?? null, detail?.descent_m ?? null, now_s(), now_s(), label_id],
+    args: [
+      detail?.ascent_m ?? null, detail?.descent_m ?? null,
+      detail?.aerobic_te ?? null, detail?.anaerobic_te ?? null, detail?.training_focus ?? null,
+      now_s(), DETAIL_VERSION, now_s(), label_id,
+    ],
   });
 }
 
@@ -153,7 +175,9 @@ export async function get_coros_days(db: Client, start: string, end: string): Pr
   });
 }
 
-export async function get_coros_activities(db: Client, start: string, end: string): Promise<(CorosActivity & { ascent_m: number | null; descent_m: number | null })[]> {
+export type StoredCorosActivity = CorosActivity & CorosActivityDetail;
+
+export async function get_coros_activities(db: Client, start: string, end: string): Promise<StoredCorosActivity[]> {
   await ensure_coros_tables(db);
   const r = await db.execute({ sql: 'SELECT * FROM coros_activities WHERE date >= ? AND date <= ? ORDER BY start_ts DESC', args: [start, end] });
   return r.rows.map(row => ({
@@ -172,5 +196,8 @@ export async function get_coros_activities(db: Client, start: string, end: strin
     location: row.location as string | null,
     ascent_m: row.ascent_m as number | null,
     descent_m: row.descent_m as number | null,
+    aerobic_te: row.aerobic_te as number | null,
+    anaerobic_te: row.anaerobic_te as number | null,
+    training_focus: row.training_focus as string | null,
   }));
 }

@@ -83,6 +83,7 @@ Done in this branch; see Status.
 - Activity results include GPS start coordinates. Do not commit raw results; fixtures must be sanitized.
 - COROS fills a missing value with 65535 (seen as 655.35 for efficiency factor). Parsers treat 65535, 6553.5 and 655.35 as missing.
 - `getActivityDetail` (needs `labelId` and `sportType`) reports elevation gain and loss separately. Ascent and descent can be stored apart, which fixes the old "descent read as climbing" bug at the source.
+- `getActivityDetail` also reports COROS's intensity read: "Aerobic TE", "Anaerobic TE" and "Training Focus" (Oct 10 ride: 4.7, 1.6, "Base"). An interval session is recognized from it automatically (`src/lib/coros/classify.ts`): a high-intensity focus, or an anaerobic TE of 3.0 or more. The label wording will be confirmed on the first real interval ride.
 - Custom sports (9800-9807) get a generic detail with no elevation, max speed or training effect. Bill's e-MTB rides logged as custom "Missoula E MTB" (9806) therefore have no climbing data. The built-in Mountain E-Bike mode (205) reports the full set, so it's the better watch mode for e-MTB rides. Rides logged as 9806 still count as ride days.
 
 #### When the data actually arrives (Bill, 2026-10-12)

@@ -237,19 +237,29 @@ export function parse_sport_records(text: string): CorosActivity[] {
 export interface CorosActivityDetail {
   ascent_m: number | null;
   descent_m: number | null;
+  aerobic_te: number | null;
+  anaerobic_te: number | null;
+  training_focus: string | null;
 }
 
 /**
  * getActivityDetail: elevation gain and loss, kept separate so a lift-served
- * park day (big descent, little climbing) is never read as climbing.
- * Returns null when the text has no elevation line.
+ * park day (big descent, little climbing) is never read as climbing, plus
+ * COROS's intensity read of the session (training effect and focus), which is
+ * how an interval session is recognized. Returns null when none are present.
  */
 export function parse_activity_detail(text: string): CorosActivityDetail | null {
   const m = text.match(/Elevation Gain\s*\/\s*Loss:\s*([\d.,]+)\s*(m|ft)\s*\/\s*([\d.,]+)\s*(m|ft)/);
-  if (!m) return null;
-  const meters = (value: string, unit: string) => {
+  const meters = (value: string | undefined, unit: string | undefined) => {
     const n = num(value);
     return n == null ? null : Math.round(unit === 'ft' ? n / 3.281 : n);
   };
-  return { ascent_m: meters(m[1], m[2]), descent_m: meters(m[3], m[4]) };
+  const detail: CorosActivityDetail = {
+    ascent_m: meters(m?.[1], m?.[2]),
+    descent_m: meters(m?.[3], m?.[4]),
+    aerobic_te: match_num(text, /^Aerobic TE:\s*([\d.]+)/m),
+    anaerobic_te: match_num(text, /^Anaerobic TE:\s*([\d.]+)/m),
+    training_focus: text.match(/^Training Focus:\s*(.+)/m)?.[1]?.trim() || null,
+  };
+  return Object.values(detail).some(v => v != null) ? detail : null;
 }

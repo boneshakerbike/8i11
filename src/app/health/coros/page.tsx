@@ -41,6 +41,7 @@ interface CorosActivity {
   ascent_m: number | null
   descent_m: number | null
   location: string | null
+  training_focus: string | null
 }
 
 interface CorosData {
@@ -195,6 +196,7 @@ function CorosContent() {
                   a.avg_hr != null ? `HR ${a.avg_hr}` : '',
                   feet(a.ascent_m) && `up ${feet(a.ascent_m)}`,
                   feet(a.descent_m) && `down ${feet(a.descent_m)}`,
+                  a.training_focus ? `focus ${a.training_focus}` : '',
                 ].filter(Boolean)
                 return (
                   <li key={a.label_id} className="px-3 py-2">

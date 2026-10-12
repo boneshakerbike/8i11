@@ -141,15 +141,26 @@ describe('COROS "no value" placeholder', () => {
 describe('parse_activity_detail', () => {
   it('reads elevation gain and loss separately', async () => {
     const { parse_activity_detail } = await import('@/lib/coros/parse');
-    expect(parse_activity_detail(F.ACTIVITY_DETAIL)).toEqual({ ascent_m: 1200, descent_m: 1250 });
+    expect(parse_activity_detail(F.ACTIVITY_DETAIL)).toEqual({
+      ascent_m: 1200, descent_m: 1250, aerobic_te: 4.0, anaerobic_te: 1.0, training_focus: 'Base',
+    });
   });
 
   it('converts feet and treats the placeholder as missing', async () => {
     const { parse_activity_detail } = await import('@/lib/coros/parse');
-    expect(parse_activity_detail('Elevation Gain / Loss: 3281 ft / 655.35 ft')).toEqual({ ascent_m: 1000, descent_m: null });
+    expect(parse_activity_detail('Elevation Gain / Loss: 3281 ft / 655.35 ft')).toEqual({
+      ascent_m: 1000, descent_m: null, aerobic_te: null, anaerobic_te: null, training_focus: null,
+    });
   });
 
-  it('returns null without an elevation line', async () => {
+  it('reads intensity without elevation, and never takes the anaerobic line as aerobic', async () => {
+    const { parse_activity_detail } = await import('@/lib/coros/parse');
+    expect(parse_activity_detail('Anaerobic TE: 3.4\nTraining Focus: VO2 Max')).toEqual({
+      ascent_m: null, descent_m: null, aerobic_te: null, anaerobic_te: 3.4, training_focus: 'VO2 Max',
+    });
+  });
+
+  it('returns null when the detail has none of these lines', async () => {
     const { parse_activity_detail } = await import('@/lib/coros/parse');
     expect(parse_activity_detail('Strength Activity Details\nSets: 12')).toBeNull();
   });

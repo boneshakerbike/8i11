@@ -119,10 +119,24 @@ describe('fill_activity_details', () => {
     expect(acts.find(a => a.sport_type === 900)).toMatchObject({ ascent_m: null, descent_m: null });
     expect(acts.find(a => a.sport_type === 9806)).toMatchObject({ ascent_m: null, descent_m: null });
 
+    expect(acts.find(a => a.sport_type === 204)).toMatchObject({ anaerobic_te: 1.0, training_focus: 'Base' });
+
     // Second run: everything was asked once already, a walk without elevation included
     calls.length = 0;
     expect(await fill_activity_details(client, db)).toEqual({ filled: 0, warnings: [] });
     expect(calls).toHaveLength(0);
+  });
+
+  it('asks again once for activities read by an older parser version', async () => {
+    const { fill_activity_details, db, client, calls } = await setup(() => ({ text: F.ACTIVITY_DETAIL }));
+    // Simulate a ride read before training effect was parsed (version 1: fetched, no version)
+    await db.execute("UPDATE coros_activities SET detail_fetched_at = 1, ascent_m = 1200 WHERE label_id = '100000000000000002'");
+    await db.execute("UPDATE coros_activities SET detail_fetched_at = 1, detail_version = 2 WHERE label_id = '100000000000000003'");
+
+    await fill_activity_details(client, db);
+    expect(calls.map(c => (c.args as { labelId: string }).labelId)).toEqual(['100000000000000002']);
+    const acts = await get_coros_activities(db, '2026-01-01', '2026-01-03');
+    expect(acts.find(a => a.label_id === '100000000000000002')).toMatchObject({ training_focus: 'Base', ascent_m: 1200 });
   });
 
   it('warns when a built-in ride comes back without elevation, and retries a failed call next run', async () => {
