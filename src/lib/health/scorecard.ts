@@ -253,7 +253,8 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   rows.push(vital_row('hrv', 'HRV', 'ms', input.vitals, today, true));
   rows.push(vital_row('resting_hr', 'Resting HR', 'bpm', input.vitals, today, false));
 
-  const weights = input.weights.filter(w => in_week(w.date) && w.lbs != null && w.lbs > 0).map(w => w.lbs as number);
+  const week_weights = input.weights.filter(w => in_week(w.date) && w.lbs != null && w.lbs > 0);
+  const weights = week_weights.map(w => w.lbs as number);
   const weight_target = `under ${TARGETS.weight_goal_lbs} once, never over ${TARGETS.weight_max_lbs}`;
   if (weights.length === 0) {
     rows.push({ key: 'weight', label: 'Weight', value: '-', target: weight_target, status: 'no_data', note: 'No COROS weight this week' });
@@ -265,7 +266,8 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
       : count_status(0, 1, days_done);
     rows.push({
       key: 'weight', label: 'Weight', value: weights.length === 1 ? `${low} lb` : `${low}-${high} lb`, target: weight_target, status,
-      reason: status === 'missed' ? `${high} lb is over ${TARGETS.weight_max_lbs}`
+      // Name the day, so an old reading does not read as today's weight
+      reason: status === 'missed' ? `${day_names([week_weights.find(w => w.lbs === high)!.date])} ${high} lb was over ${TARGETS.weight_max_lbs}`
         : status === 'behind' ? `not under ${TARGETS.weight_goal_lbs} yet` : undefined,
     });
   }

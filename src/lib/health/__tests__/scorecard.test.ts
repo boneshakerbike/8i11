@@ -209,8 +209,8 @@ describe('scorecard_summary', () => {
 describe('reasons in the one-line summary', () => {
   it('says why weight is not met, so it does not read as a missing weight', () => {
     const rows = card(day(0), { weights: [{ date: day(0), lbs: 197.1 }] }).rows;
-    expect(row(rows, 'weight')).toMatchObject({ status: 'missed', reason: '197.1 lb is over 195' });
-    expect(scorecard_summary(rows).missed).toEqual(['Weight (197.1 lb is over 195)']);
+    expect(row(rows, 'weight')).toMatchObject({ status: 'missed', reason: 'Mon 197.1 lb was over 195' });
+    expect(scorecard_summary(rows).missed).toEqual(['Weight (Mon 197.1 lb was over 195)']);
   });
 
   it('names the days a daily target was skipped', () => {
