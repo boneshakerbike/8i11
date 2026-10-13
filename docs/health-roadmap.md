@@ -145,7 +145,7 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - 1 interval session/week
   - sleep: 8 h average goal, 7 h asleep minimum
   - resting HR and HRV: against Bill's own 90-day normal
-  - weight: never above 195 lb, under 190 lb at least once a week
+  - weight: under 195 lb now (latest reading; an earlier spike is over once back under), under 190 lb at least once a week (changed by Bill 2026-10-13; was "never above 195" all week)
 
   Intervals and heavy strength are detected from COROS automatically, not logged (`src/lib/coros/classify.ts`). Heavy strength means at least 6 working sets with added weight; a session with fewer is mobility (the Oct 8 session: 17 sets, none loaded). Confirm on the first real heavy session. The coach must nudge framework items that are behind; it never did for two months.
 - 2026-10-12: COROS has all rides, so it is the coach's training source. Ride with GPS stays as a drill-down page. Health is the coach plus access to all the data, with home page drill-downs kept. COROS stays read-only for now; writing comes later behind Approve.
@@ -187,9 +187,9 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 ### In progress
 
 - Phase 3, step 1: weekly scorecard (`src/lib/health/scorecard.ts`, `/api/coaching/scorecard`, box on `/coach`).
-  - Collapsed by default to one line: "N of M on track", colored by the worst status, naming anything not met or behind with a short reason (e.g. "Weight (197.1 lb is over 195)"). Tap to see every row; the choice is remembered on the device. "Missed" was renamed "Not met" after it read as "weight missing" (2026-10-13).
+  - Collapsed by default to one line: "N of M on track", colored by the worst status, naming anything not met or behind with a short reason (e.g. "Weight (196 lb today is over 195)"). Tap to see every row; the choice is remembered on the device. "Missed" was renamed "Not met" after it read as "weight missing" (2026-10-13).
   - This week, Monday to Sunday Mountain Time, against the targets in Decisions. Plain counting, no AI; the coach will read the same rows.
-  - Status per row: Done, On track (at the pace needed through yesterday), Behind, Not met (no longer reachable this week, or weight over 195), No data.
+  - Status per row: Done, On track (at the pace needed through yesterday), Behind, Not met (no longer reachable this week, or the latest weight over 195), No data.
   - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
   - Rides count built-in bike types 200 to 205 plus custom 9806 (e-MTB). Yoga/mobility counts strength sessions not classified heavy, on Monday to Friday.
   - Sleep, HRV and resting HR come from the Oura cache, with coach-session history (`daily_metrics`, the same Oura numbers) filling days the cache lacks. The old daily job never ran, so the cache alone was too thin for a 90-day normal (seen on the first preview, 2026-10-12).
@@ -214,13 +214,13 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - Resource use: about 4 Drive requests a day; the prompt grows by about 7,000 tokens, cached across a session's turns.
 
 - Phase 3, step 4: nudges and the model change.
-  - From Wednesday (`NUDGE_FROM_DAY`), the brief ends THIS WEEK with a MUST MENTION list (`must_mention`, `src/lib/health/daily-brief.ts`): heavy strength and intervals until done (a once-a-week session only falls behind pace on Friday), and ride time, sleep and weight when behind or not met. Missed ride or yoga days (can't be undone) and HRV / resting HR (signals, not to-dos) are not nudged.
+  - From Wednesday (`NUDGE_FROM_DAY`), the brief ends THIS WEEK with a MUST MENTION list (`must_mention`, `src/lib/health/daily-brief.ts`): heavy strength, intervals and a weigh-in under 190 until done (a once-a-week item only falls behind pace on Friday), and ride time and sleep when behind. Weight over 195 on the latest reading is named any day, not only from Wednesday. Missed ride or yoga days (can't be undone) and HRV / resting HR (signals, not to-dos) are not nudged.
   - The prompt makes the coach name every item in its first reply with one concrete way to fit it in, every session until done, and hold to the framework on pushback unless given new information.
   - Coach model: `claude-opus-5-5` at `effort: low`. Thinking is always on with this model, so the reply is read by block type (`src/lib/coaching/reply.ts`) and `max_tokens` leaves room for thinking. A safety decline is re-run on Anthropic's recommended fallback model (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`); if every model declines, the coach says it could not answer.
   - `@anthropic-ai/sdk` 0.71 to 0.133 for these request fields.
   - Cost (Claude API, paid): about 8 cents per session start at Opus 5.5 prices, cached follow-up turns much less.
 
-- Weight from COROS (merged in #311, 2026-10-13, replaces the 2026-07-03 "weight input stays typed" decision): Bill enters weight in COROS each morning. Every COROS sync (midday and session start) reads `queryUserInfo` (profile; only the weight is kept) and saves it as today's `daily_metrics.weight_lbs` only when it changed, since COROS keeps no date for it. The Coach page weight box is gone; the scorecard, brief and Weight card read the saved weight. A value outside 120 to 300 lb is not saved and the sync line warns.
+- Weight from COROS (merged in #311, 2026-10-13, replaces the 2026-07-03 "weight input stays typed" decision): Bill enters weight in COROS each morning. Every COROS sync (midday and session start) reads `queryUserInfo` (profile; only the weight is kept) and saves it as today's `daily_metrics.weight_lbs` only when it changed, since COROS keeps no date for it; the first sync of each week saves it even unchanged, so every week starts with his current weight. The Coach page weight box is gone; the scorecard, brief and Weight card read the saved weight. A value outside 120 to 300 lb is not saved and the sync line warns.
 
 ### Next
 

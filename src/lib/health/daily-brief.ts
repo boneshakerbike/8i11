@@ -163,15 +163,17 @@ const day_of_week = (card: Scorecard, today: string) =>
  */
 export const NUDGE_KEYS: readonly ScoreRow['key'][] = ['heavy', 'intervals', 'ride_time', 'sleep', 'weight'];
 /**
- * Heavy strength and intervals are named until done, even on pace: a once-a-week
- * session only falls behind pace on Friday, too late to plan it.
+ * Heavy strength, intervals and the weekly under-190 weigh-in are named until
+ * done, even on pace: a once-a-week item only falls behind pace on Friday, too
+ * late to plan it.
  */
-export const UNTIL_DONE_KEYS: readonly ScoreRow['key'][] = ['heavy', 'intervals'];
+export const UNTIL_DONE_KEYS: readonly ScoreRow['key'][] = ['heavy', 'intervals', 'weight'];
 /** Nudges start Wednesday: earlier in the week the pace is too short to judge. */
 export const NUDGE_FROM_DAY = 3;
 
 export function must_mention(card: Scorecard, today: string): ScoreRow[] {
-  if (day_of_week(card, today) < NUDGE_FROM_DAY) return [];
+  // Weight over 195 right now is named any day: getting back under comes first
+  if (day_of_week(card, today) < NUDGE_FROM_DAY) return card.rows.filter(r => r.key === 'weight' && r.status === 'missed');
   return card.rows.filter(r => NUDGE_KEYS.includes(r.key) && (
     r.status === 'behind' || r.status === 'missed' || (UNTIL_DONE_KEYS.includes(r.key) && r.status === 'on_track')
   ));

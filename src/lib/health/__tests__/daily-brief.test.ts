@@ -124,7 +124,7 @@ describe('build_daily_brief: this week and body', () => {
   it('includes the scorecard summary with reasons, and every row', () => {
     const text = brief();
     expect(text).toContain('THIS WEEK (Monday, October 12, 2026 to Sunday, October 18, 2026; day 2 of 7)');
-    expect(text).toMatch(/^Not met: .*Weight \(197\.1 lb is over 195\)$/m);
+    expect(text).toMatch(/^Not met: .*Weight \(197\.1 lb Mon is over 195; not under 190 yet this week\)$/m);
     expect(text).toMatch(/^- Heavy strength: 0 of 3 \(target 3 a week\): /m);
   });
 
@@ -182,7 +182,11 @@ describe('must_mention: weekly to-dos the coach has to name', () => {
     expect(text).toContain('MUST MENTION (weekly to-dos from his framework, not done yet; name each one in your first reply)');
     expect(text).toContain('- Intervals: 0 of 1; still to do this week'); // on pace until Friday, named anyway
     expect(text).toContain('- Heavy strength: 0 of 3; pace is 1 by now');
-    expect(text).toContain('- Weight (not met): 197.1 lb; 197.1 lb is over 195');
-    expect(brief()).not.toContain('MUST MENTION'); // Tuesday
+    expect(text).toContain('- Weight (not met): 197.1 lb; 197.1 lb Mon is over 195; not under 190 yet this week');
+    // Tuesday: only weight over 195 right now is named this early in the week
+    expect(brief()).toContain('- Weight (not met): 197.1 lb; 197.1 lb Mon is over 195; not under 190 yet this week');
+    expect(brief()).not.toContain('- Intervals: 0 of 1; still to do this week');
+    expect(brief({ scorecard: card('2026-10-13', { weights: [{ date: '2026-10-12', lbs: 197.1 }, { date: '2026-10-13', lbs: 192.2 }] }) }))
+      .not.toContain('MUST MENTION');
   });
 });

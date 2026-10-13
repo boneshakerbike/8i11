@@ -278,6 +278,14 @@ describe('save_coros_weight', () => {
     expect(await weight_on(20739)).toBe(195.4);
   });
 
+  it('saves an unchanged weight once at the start of a new week, so the week has a reading', async () => {
+    const { save_coros_weight, db, weight_on } = await db_with_metrics();
+    await save_coros_weight(db, '2026-10-11', 196.2); // Sunday
+    expect(await save_coros_weight(db, '2026-10-12', 196.2)).toBe(true); // Monday
+    expect(await weight_on(20738)).toBe(196.2);
+    expect(await save_coros_weight(db, '2026-10-13', 196.2)).toBe(false); // Tuesday, unchanged
+  });
+
   it('updates today when Bill corrects the entry, and keeps the other inputs', async () => {
     const { save_coros_weight, db, weight_on } = await db_with_metrics();
     await db.execute('INSERT INTO daily_metrics (date, back_pain_scale) VALUES (20738, 3)');
