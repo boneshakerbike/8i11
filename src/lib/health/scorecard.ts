@@ -256,7 +256,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   const weights = input.weights.filter(w => in_week(w.date) && w.lbs != null && w.lbs > 0).map(w => w.lbs as number);
   const weight_target = `under ${TARGETS.weight_goal_lbs} once, never over ${TARGETS.weight_max_lbs}`;
   if (weights.length === 0) {
-    rows.push({ key: 'weight', label: 'Weight', value: '-', target: weight_target, status: 'no_data', note: 'No weight entered this week' });
+    rows.push({ key: 'weight', label: 'Weight', value: '-', target: weight_target, status: 'no_data', note: 'No COROS weight this week' });
   } else {
     const low = Math.min(...weights);
     const high = Math.max(...weights);

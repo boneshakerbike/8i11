@@ -198,7 +198,6 @@ export default function CoachPage() {
   useEffect(() => { document.title = '8i11 | Coach'; }, []);
 
   // Manual inputs — selectors start unset so an untouched input saves null
-  const [weight, setWeight] = useState('');
   const [backPain, setBackPain] = useState<number | null>(null);
   const [bowel, setBowel] = useState<number | null>(null);
   const [injuries, setInjuries] = useState('');
@@ -247,7 +246,6 @@ export default function CoachPage() {
       const raw = sessionStorage.getItem(draft_key);
       if (raw) {
         const draft = JSON.parse(raw);
-        if (typeof draft.weight === 'string') setWeight(draft.weight);
         if (typeof draft.backPain === 'number' || draft.backPain === null) setBackPain(draft.backPain);
         if (typeof draft.bowel === 'number' || draft.bowel === null) setBowel(draft.bowel);
         if (typeof draft.injuries === 'string') setInjuries(draft.injuries);
@@ -284,10 +282,10 @@ export default function CoachPage() {
   useEffect(() => {
     const draft_key = `coach_manual_inputs_${dateStr}`;
     try {
-      sessionStorage.setItem(draft_key, JSON.stringify({ weight, backPain, bowel, injuries }));
+      sessionStorage.setItem(draft_key, JSON.stringify({ backPain, bowel, injuries }));
     } catch { /* storage full or unavailable — skip */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weight, backPain, bowel, injuries]);
+  }, [backPain, bowel, injuries]);
 
   // Auto-save the in-progress chat session as it changes
   useEffect(() => {
@@ -507,7 +505,6 @@ export default function CoachPage() {
           date_str: dateStr,
           epoch_day: epochDay,
           manual: {
-            weight_lbs: weight ? parseFloat(weight) : undefined,
             back_pain_scale: backPain ?? undefined,
             bowel_status: bowel != null ? BOWEL_LEVELS.find(o => o.value === bowel)?.label : undefined,
             bowel_scale: bowel ?? undefined,
@@ -522,9 +519,9 @@ export default function CoachPage() {
       const { injection, metrics: serverMetrics } = await injectRes.json();
       setDataInjection(injection);
 
-      // Update metrics with server-computed values (includes weight trend)
+      // Update metrics with server-computed values (weight comes from COROS)
       if (serverMetrics) {
-        setMetrics(prev => ({ ...prev, ...serverMetrics, weight: weight ? parseFloat(weight) : prev?.weight }));
+        setMetrics(prev => ({ ...prev, ...serverMetrics }));
       }
 
       // Send to coaching chat
@@ -616,7 +613,6 @@ export default function CoachPage() {
           token_count: totalTokens,
           data_snapshot: dataInjection,
           manual: {
-            weight_lbs: weight ? parseFloat(weight) : undefined,
             back_pain_scale: backPain ?? undefined,
             bowel_status: bowel != null ? BOWEL_LEVELS.find(o => o.value === bowel)?.label : undefined,
             bowel_scale: bowel ?? undefined,
@@ -909,16 +905,6 @@ export default function CoachPage() {
 
             {/* Manual Inputs */}
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Weight (lbs)</label>
-                <input
-                  type="number"
-                  value={weight}
-                  onChange={e => setWeight(e.target.value)}
-                  placeholder="e.g. 192"
-                  className="w-1/2 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm"
-                />
-              </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Back</label>
                 <LevelSelector options={BACK_LEVELS} value={backPain} onChange={setBackPain} />

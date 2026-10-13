@@ -324,3 +324,30 @@ export function parse_strength_laps(text: string): CorosStrengthLaps | null {
   }
   return laps_seen > 0 && summaries_seen === 0 ? null : out;
 }
+
+/** A believable adult weight for Bill, in pounds; anything outside is not stored. */
+export const WEIGHT_RANGE_LBS = [120, 300] as const;
+const LBS_PER_KG = 2.20462;
+
+/**
+ * queryUserInfo: COROS's profile, which holds the weight Bill enters each
+ * morning (plus height, birthday and gender, which are ignored). Returns
+ * pounds to one decimal, or null when no believable weight is found. The
+ * exact format hasn't been seen yet, so this accepts a "weight" label with a
+ * number, in text or JSON, with or without a unit. Without a unit, a value
+ * up to 140 is taken as kg (Bill weighs about 190 lb = 86 kg), and a value
+ * of 1,000 or more as grams.
+ */
+export function parse_user_weight(text: string): number | null {
+  const m = text.match(/\bweight\b["']?\s*(?:\([^)]*\))?\s*[:=]?\s*["']?\s*([\d.,]+)\s*(kg|kgs|kilograms?|lbs?|pounds?)?/i);
+  const n = num(m?.[1]);
+  if (n == null || n <= 0) return null;
+  const unit = m?.[2]?.toLowerCase() ?? '';
+  const lbs = unit.startsWith('k') ? n * LBS_PER_KG
+    : unit.startsWith('l') || unit.startsWith('p') ? n
+    : n >= 1000 ? (n / 1000) * LBS_PER_KG
+    : n <= 140 ? n * LBS_PER_KG
+    : n;
+  if (lbs < WEIGHT_RANGE_LBS[0] || lbs > WEIGHT_RANGE_LBS[1]) return null;
+  return Math.round(lbs * 10) / 10;
+}

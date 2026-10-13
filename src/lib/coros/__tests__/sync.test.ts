@@ -252,3 +252,38 @@ describe('fill_activity_details', () => {
     expect(calls.map(label_of)).toEqual(sessions.slice(MAX_DETAIL_CALLS).map(a => a.label_id));
   });
 });
+
+describe('save_coros_weight', () => {
+  async function db_with_metrics() {
+    const { save_coros_weight } = await import('@/lib/coros/data');
+    const db = createClient({ url: ':memory:' });
+    await db.execute('CREATE TABLE daily_metrics (date INTEGER PRIMARY KEY, weight_lbs REAL, back_pain_scale INTEGER, created_at INTEGER, updated_at INTEGER)');
+    const weight_on = async (epoch: number) => (await db.execute({ sql: 'SELECT weight_lbs FROM daily_metrics WHERE date = ?', args: [epoch] })).rows[0]?.weight_lbs ?? null;
+    return { save_coros_weight, db, weight_on };
+  }
+  // 2026-10-12 is epoch day 20738
+
+  it('saves a new weight as today', async () => {
+    const { save_coros_weight, db, weight_on } = await db_with_metrics();
+    expect(await save_coros_weight(db, '2026-10-12', 196.2)).toBe(true);
+    expect(await weight_on(20738)).toBe(196.2);
+  });
+
+  it('skips an unchanged weight, so a morning without a new entry does not count', async () => {
+    const { save_coros_weight, db, weight_on } = await db_with_metrics();
+    await save_coros_weight(db, '2026-10-12', 196.2);
+    expect(await save_coros_weight(db, '2026-10-13', 196.2)).toBe(false);
+    expect(await weight_on(20739)).toBeNull();
+    expect(await save_coros_weight(db, '2026-10-13', 195.4)).toBe(true);
+    expect(await weight_on(20739)).toBe(195.4);
+  });
+
+  it('updates today when Bill corrects the entry, and keeps the other inputs', async () => {
+    const { save_coros_weight, db, weight_on } = await db_with_metrics();
+    await db.execute('INSERT INTO daily_metrics (date, back_pain_scale) VALUES (20738, 3)');
+    await save_coros_weight(db, '2026-10-12', 196.2);
+    await save_coros_weight(db, '2026-10-12', 196.8);
+    expect(await weight_on(20738)).toBe(196.8);
+    expect((await db.execute('SELECT back_pain_scale FROM daily_metrics WHERE date = 20738')).rows[0].back_pain_scale).toBe(3);
+  });
+});

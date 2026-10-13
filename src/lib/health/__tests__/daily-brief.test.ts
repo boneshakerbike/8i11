@@ -132,7 +132,7 @@ describe('build_daily_brief: this week and body', () => {
     expect(brief({ weight: { today: 196.2, last_7: [{ date: YESTERDAY, lbs: 197.2 }, { date: TODAY, lbs: 196.2 }] } }))
       .toContain('Weight 196.2 lb today. 7-day avg 196.7 lb over 2 readings');
     expect(brief({ weight: { today: null, last_7: [{ date: YESTERDAY, lbs: 197.1 }] } }))
-      .toContain('Weight not entered today; last 197.1 lb on Monday, October 12, 2026');
+      .toContain('No COROS weight today; last 197.1 lb on Monday, October 12, 2026');
   });
 
   it('lists back pain by day so a "spikes this week" claim can be checked', () => {
