@@ -1,10 +1,11 @@
 /**
  * API route: GET /api/coaching/trends
  * The daily health job (Vercel cron, vercel.json, 18:00 UTC = noon MDT / 11am MST).
- * Midday, not night: Oura only uploads after Bill opens the app in the morning,
- * and COROS uploads overnight sleep and no-signal rides the next morning.
- *   1. Oura: re-fetch the last 7 past days (force), so late uploads replace
- *      days that were cached empty or partial.
+ * Midday, not night: neither the Oura ring nor the COROS watch uploads until
+ * Bill opens its app in the morning and it syncs.
+ *   1. Oura: re-fetch the last 7 days through today (force), so late uploads
+ *      replace days that were cached empty or partial, and last night's sleep
+ *      (filed under today) counts the same day.
  *   2. COROS: pull the last 7 days through MCP into coros_daily / coros_activities.
  *   3. Trends: build yesterday's daily_metrics row, then 7/30-day trend_cache.
  * Each step runs even if an earlier one fails, and the run is logged to
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   const steps: SyncStep[] = [];
 
   steps.push(await run_step('oura', async () => {
-    const r = await sync_oura({ days: 7, force: true });
+    const r = await sync_oura({ days: 7, force: true, include_today: true });
     if (!r.connected) return { ok: false, detail: 'Oura is not connected' };
     const errors = r.errors.length > 0 ? `; errors: ${r.errors.join(', ')}` : '';
     return { ok: r.errors.length === 0, detail: `${r.synced} days synced, ${r.skipped} already cached${errors}` };

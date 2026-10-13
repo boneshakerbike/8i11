@@ -87,12 +87,12 @@ Done in this branch; see Status.
 - `getActivityDetail` on a strength session (402) has no exercises. `queryActivityLapData` does, and answers in JSON rather than text: `lapGroups[].laps[]` with `exerciseNameKey`, `sets`, `reps`, `time` and `weight`. Each exercise has effort and rest rows (`sets` 0), then one summary row (`sets` above 0); "Rest" summary rows are the breaks. On the Oct 8 session the summary rows add up to COROS's own total (17 sets, 1:19:55). The weight unit is not confirmed yet; every weight was 0 that day.
 - Custom sports (9800-9807) get a generic detail with no elevation, max speed or training effect. Bill's e-MTB rides logged as custom "Missoula E MTB" (9806) therefore have no climbing data. The built-in Mountain E-Bike mode (205) reports the full set, so it's the better watch mode for e-MTB rides. Rides logged as 9806 still count as ride days.
 
-#### When the data actually arrives (Bill, 2026-10-12)
+#### When the data actually arrives (Bill, 2026-10-12, corrected 2026-10-13)
 
-- Oura data reaches Oura's cloud only after Bill wakes up and opens the Oura app.
-- COROS syncs from the watch until bedtime. Overnight sleep and no-signal rides (bike parks) upload the next morning on home data.
-- So the daily job runs at midday (18:00 UTC), and every run re-fetches the whole last 7 days from both sources. Late uploads replace days that were empty or partial.
-- The coach's morning session will pull fresh data itself (Phase 3), not rely on the daily job alone.
+- Neither device uploads on its own. Oura and COROS data reach the web only after Bill opens each app in the morning and it syncs with the ring and the watch. Until then, last night's sleep and yesterday's later activities are not in either cloud.
+- So the daily job runs at midday (18:00 UTC), and every run re-fetches the whole last 7 days from both sources. A morning when the apps were opened late (or a trip) heals on the next run.
+- Pace on the weekly scorecard is measured through yesterday, so an unsynced morning never counts against Bill.
+- The coach's morning session will pull fresh data itself (Phase 3), not rely on the daily job alone. When last night has not been uploaded yet, the brief must say so ("open the Oura app") instead of reading the gap as no sleep.
 
 ### Phase 2: COROS through MCP
 
@@ -191,7 +191,9 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - Status per row: Done, On track (at the pace needed through yesterday), Behind, Missed (no longer reachable this week, or weight over 195), No data.
   - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
   - Rides count built-in bike types 200 to 205 plus custom 9806 (e-MTB). Yoga/mobility counts strength sessions not classified heavy, on Monday to Friday.
-  - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows and 7 weight rows. No COROS or Oura calls.
+  - Sleep, HRV and resting HR come from the Oura cache, with coach-session history (`daily_metrics`, the same Oura numbers) filling days the cache lacks. The old daily job never ran, so the cache alone was too thin for a 90-day normal (seen on the first preview, 2026-10-12).
+  - The daily job now fetches Oura through today: Oura files last night's sleep under today, and it is final by midday. Today's partial activity is replaced by the next day's forced re-fetch. The Oura page's Sync button still ends yesterday.
+  - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows, 97 coach-history rows and 7 weight rows. No COROS or Oura calls.
 
 ### Next
 

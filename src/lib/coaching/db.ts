@@ -314,6 +314,27 @@ export async function populate_daily_metrics(
   return true;
 }
 
+/**
+ * Oura sleep, HRV and resting HR saved with coach sessions, between two epoch
+ * days. The same Oura measures as wellness_cache (night average HRV, lowest
+ * heart rate, main sleep period), so they fill days the cache lacks.
+ */
+export async function get_daily_metric_vitals(start_epoch: number, end_epoch: number): Promise<Array<{
+  date: string; hrv: number | null; resting_hr: number | null; sleep_min: number | null;
+}>> {
+  await ensure_schema();
+  const result = await get_client().execute({
+    sql: 'SELECT date, hrv_rmssd, resting_hr, sleep_duration_min FROM daily_metrics WHERE date >= ? AND date <= ? ORDER BY date',
+    args: [start_epoch, end_epoch],
+  });
+  return result.rows.map(row => ({
+    date: epoch_day_to_date_str(Number(row.date)),
+    hrv: row.hrv_rmssd as number | null,
+    resting_hr: row.resting_hr as number | null,
+    sleep_min: row.sleep_duration_min as number | null,
+  }));
+}
+
 /** Weight readings between two epoch days, as YYYY-MM-DD dates. */
 export async function get_weights(start_epoch: number, end_epoch: number): Promise<Array<{ date: string; lbs: number }>> {
   await ensure_schema();
