@@ -25,12 +25,13 @@ export default function SyncStatus() {
 
   if (!status) return null
   const { health, coros_connected } = status
-  const ok = health.level === 'ok' && coros_connected
+  // Never having run is expected before the first midday run, not a problem
+  const calm = (health.level === 'ok' || health.level === 'never') && coros_connected
 
-  if (ok) {
+  if (calm) {
     return (
       <p className="text-xs text-gray-500 mb-3 flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" aria-hidden="true" />
+        <span className={`inline-block w-1.5 h-1.5 rounded-full ${health.level === 'ok' ? 'bg-green-500' : 'bg-gray-500'}`} aria-hidden="true" />
         {health.message}
       </p>
     )

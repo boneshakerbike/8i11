@@ -72,7 +72,7 @@ const mt_time = (s: number) => new Date(s * 1000).toLocaleString('en-US', {
 
 /** One line for the page. Late beats failed: a job that stopped running is the bigger problem. */
 export function sync_health(run: SyncRun | null, now_s: number): SyncHealth {
-  if (!run) return { level: 'never', message: 'Daily sync has not run yet.' };
+  if (!run) return { level: 'never', message: 'Daily sync has not run yet. It runs each day at noon Mountain Time.' };
   const hours = Math.floor((now_s - run.finished_at) / 3600);
   if (hours >= STALE_AFTER_HOURS) {
     return { level: 'late', message: `Daily sync last ran ${hours} hours ago (${mt_time(run.finished_at)}). It should run every day around midday.` };

@@ -29,7 +29,8 @@ const OPEN_KEY = 'weekly_scorecard_open'
 const short_date = (d: string) =>
   new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
 
-export default function WeeklyScorecard() {
+/** `refresh`: bump it to reload, e.g. after a COROS sync saved new data. */
+export default function WeeklyScorecard({ refresh = 0 }: { refresh?: number }) {
   const [card, setCard] = useState<Scorecard | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -48,7 +49,7 @@ export default function WeeklyScorecard() {
         setCard(json)
       })
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
-  }, [])
+  }, [refresh])
 
   function toggle() {
     const next = !open
