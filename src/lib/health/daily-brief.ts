@@ -129,7 +129,15 @@ export function is_lift_assisted(a: { ascent_m: number | null; descent_m: number
 const activity_name = (a: StoredCorosActivity) =>
   /^Sport\(\d+\)$/.test(a.sport_name) && a.location ? `${a.location} (custom sport)` : a.sport_name;
 
-function activity_line(a: StoredCorosActivity): string {
+/** One activity for display: its name, its numbers, and anything to watch. */
+export interface ActivitySummary {
+  name: string;
+  parts: string[];
+  flags: string[];
+}
+
+/** Shared by the brief and the Today page's Yesterday card, so both say the same thing. */
+export function activity_summary(a: StoredCorosActivity): ActivitySummary {
   const parts: string[] = [];
   if (a.duration_s != null) parts.push(hm(a.duration_s / 60));
   if (a.distance_m) parts.push(miles(a.distance_m));
@@ -148,6 +156,11 @@ function activity_line(a: StoredCorosActivity): string {
   const flags: string[] = [];
   if (is_lift_assisted(a)) flags.push('Likely lift-assisted bike park day: count the descending, not the climbing');
   if (is_interval_session(a)) flags.push('Counts as an interval session');
+  return { name, parts, flags };
+}
+
+function activity_line(a: StoredCorosActivity): string {
+  const { name, parts, flags } = activity_summary(a);
   return `- ${name}: ${parts.join(', ')}${flags.length ? `. ${flags.join('; ')}` : ''}`;
 }
 

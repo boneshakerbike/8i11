@@ -34,13 +34,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(login_url);
   }
 
-  // /coach and /api/coaching/* are admin-only (non-guest).
-  const is_coach = path === '/coach' || path.startsWith('/coach/') || path.startsWith('/api/coaching');
+  // The coach (/coach, /health Today, /health/trends, /api/coaching/*) is
+  // admin-only (non-guest). Guests opening Health land on the Oura page.
+  const is_coach = path === '/coach' || path.startsWith('/coach/') || path.startsWith('/api/coaching')
+    || path === '/health' || path === '/health/trends';
   if (is_coach && token.sub === 'guest') {
     if (path.startsWith('/api/')) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 });
     }
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL(path.startsWith('/health') ? '/health/oura' : '/', request.url));
   }
 
   return NextResponse.next();

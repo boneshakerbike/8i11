@@ -103,7 +103,7 @@ export default function CoachMemoryPage() {
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Coach memory</h1>
-          <Link href="/coach" className="text-sm text-gray-400 hover:text-white border border-zinc-700 px-3 py-1 rounded">Back to Coach</Link>
+          <Link href="/health" className="text-sm text-gray-400 hover:text-white border border-zinc-700 px-3 py-1 rounded">Back to Today</Link>
         </div>
         <p className="text-sm text-gray-400">
           The coach reads these before every session, plus your last 7 sessions. Where your framework differs from what you ask for, the framework wins.
