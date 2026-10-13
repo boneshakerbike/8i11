@@ -180,7 +180,6 @@ export function build_daily_brief(input: BriefInput): string {
     } else {
       lines.push('Sleep: not in the Oura data yet');
     }
-    const hrv = vital('hrv');
     const context = (r: ScoreRow | undefined) => (r && r.value !== '-' ? `; ${r.value}${r.note ? `. ${r.note}` : ''}` : r?.note ? `. ${r.note}` : '');
     if (n.hrv != null) lines.push(`HRV ${n.hrv} ms last night${context(vital('hrv'))}`);
     if (n.resting_hr != null) lines.push(`Resting HR ${n.resting_hr} bpm last night${context(vital('resting_hr'))}`);
