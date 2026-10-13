@@ -87,12 +87,12 @@ Done in this branch; see Status.
 - `getActivityDetail` on a strength session (402) has no exercises. `queryActivityLapData` does, and answers in JSON rather than text: `lapGroups[].laps[]` with `exerciseNameKey`, `sets`, `reps`, `time` and `weight`. Each exercise has effort and rest rows (`sets` 0), then one summary row (`sets` above 0); "Rest" summary rows are the breaks. On the Oct 8 session the summary rows add up to COROS's own total (17 sets, 1:19:55). The weight unit is not confirmed yet; every weight was 0 that day.
 - Custom sports (9800-9807) get a generic detail with no elevation, max speed or training effect. Bill's e-MTB rides logged as custom "Missoula E MTB" (9806) therefore have no climbing data. The built-in Mountain E-Bike mode (205) reports the full set, so it's the better watch mode for e-MTB rides. Rides logged as 9806 still count as ride days.
 
-#### When the data actually arrives (Bill, 2026-10-12)
+#### When the data actually arrives (Bill, 2026-10-12, corrected 2026-10-13)
 
-- Oura data reaches Oura's cloud only after Bill wakes up and opens the Oura app.
-- COROS syncs from the watch until bedtime. Overnight sleep and no-signal rides (bike parks) upload the next morning on home data.
-- So the daily job runs at midday (18:00 UTC), and every run re-fetches the whole last 7 days from both sources. Late uploads replace days that were empty or partial.
-- The coach's morning session will pull fresh data itself (Phase 3), not rely on the daily job alone.
+- Neither device uploads on its own. Oura and COROS data reach the web only after Bill opens each app in the morning and it syncs with the ring and the watch. Until then, last night's sleep and yesterday's later activities are not in either cloud.
+- So the daily job runs at midday (18:00 UTC), and every run re-fetches the whole last 7 days from both sources. A morning when the apps were opened late (or a trip) heals on the next run.
+- Pace on the weekly scorecard is measured through yesterday, so an unsynced morning never counts against Bill.
+- The coach's morning session will pull fresh data itself (Phase 3), not rely on the daily job alone. When last night has not been uploaded yet, the brief must say so ("open the Oura app") instead of reading the gap as no sleep.
 
 ### Phase 2: COROS through MCP
 

@@ -1,8 +1,8 @@
 /**
  * API route: GET /api/coaching/trends
  * The daily health job (Vercel cron, vercel.json, 18:00 UTC = noon MDT / 11am MST).
- * Midday, not night: Oura only uploads after Bill opens the app in the morning,
- * and COROS uploads overnight sleep and no-signal rides the next morning.
+ * Midday, not night: neither the Oura ring nor the COROS watch uploads until
+ * Bill opens its app in the morning and it syncs.
  *   1. Oura: re-fetch the last 7 days through today (force), so late uploads
  *      replace days that were cached empty or partial, and last night's sleep
  *      (filed under today) counts the same day.
