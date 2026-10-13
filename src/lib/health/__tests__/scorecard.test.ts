@@ -115,7 +115,10 @@ describe('weekly_scorecard: sleep and weight', () => {
     expect(row(card(day(3), { weights: [{ date: day(0), lbs: 191 }, { date: day(2), lbs: 189.5 }] }).rows, 'weight'))
       .toMatchObject({ value: '189.5 lb', status: 'done' });
     expect(row(card(day(3), { weights: [{ date: day(0), lbs: 189 }, { date: day(1), lbs: 196 }] }).rows, 'weight'))
-      .toMatchObject({ status: 'missed', reason: '196 lb Tue is over 195' });
+      .toMatchObject({ status: 'missed', reason: '196 lb Tue is over 195', note: 'Last weigh-in Tue' });
+    // Over 195 with no reading under 190 names both
+    expect(row(card(day(3), { weights: [{ date: day(0), lbs: 192 }, { date: day(3), lbs: 196 }] }).rows, 'weight'))
+      .toMatchObject({ status: 'missed', reason: '196 lb today is over 195; not under 190 yet this week', note: undefined });
   });
 
   it('forgets an earlier spike once the latest reading is back under 195', () => {
@@ -134,7 +137,9 @@ describe('weekly_scorecard: sleep and weight', () => {
     const weights = [{ date: day(0), lbs: 192 }];
     expect(row(card(day(3), { weights }).rows, 'weight').status).toBe('on_track');
     expect(row(card(day(4), { weights }).rows, 'weight').status).toBe('behind');
-    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'no_data', note: 'No COROS weight this week' });
+    // No weigh-in at all is still no reading under 190
+    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'on_track', value: '-', note: 'No COROS weight this week' });
+    expect(row(card(day(4)).rows, 'weight')).toMatchObject({ status: 'behind', reason: 'not under 190 yet this week' });
   });
 });
 
@@ -222,8 +227,8 @@ describe('scorecard_summary', () => {
 describe('reasons in the one-line summary', () => {
   it('says why weight is not met, so it does not read as a missing weight', () => {
     const rows = card(day(0), { weights: [{ date: day(0), lbs: 197.1 }] }).rows;
-    expect(row(rows, 'weight')).toMatchObject({ status: 'missed', reason: '197.1 lb today is over 195' });
-    expect(scorecard_summary(rows).missed).toEqual(['Weight (197.1 lb today is over 195)']);
+    expect(row(rows, 'weight')).toMatchObject({ status: 'missed', reason: '197.1 lb today is over 195; not under 190 yet this week' });
+    expect(scorecard_summary(rows).missed).toEqual(['Weight (197.1 lb today is over 195; not under 190 yet this week)']);
   });
 
   it('names the days a daily target was skipped', () => {

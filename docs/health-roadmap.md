@@ -220,7 +220,7 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - `@anthropic-ai/sdk` 0.71 to 0.133 for these request fields.
   - Cost (Claude API, paid): about 8 cents per session start at Opus 5.5 prices, cached follow-up turns much less.
 
-- Weight from COROS (merged in #311, 2026-10-13, replaces the 2026-07-03 "weight input stays typed" decision): Bill enters weight in COROS each morning. Every COROS sync (midday and session start) reads `queryUserInfo` (profile; only the weight is kept) and saves it as today's `daily_metrics.weight_lbs` only when it changed, since COROS keeps no date for it. The Coach page weight box is gone; the scorecard, brief and Weight card read the saved weight. A value outside 120 to 300 lb is not saved and the sync line warns.
+- Weight from COROS (merged in #311, 2026-10-13, replaces the 2026-07-03 "weight input stays typed" decision): Bill enters weight in COROS each morning. Every COROS sync (midday and session start) reads `queryUserInfo` (profile; only the weight is kept) and saves it as today's `daily_metrics.weight_lbs` only when it changed, since COROS keeps no date for it; the first sync of each week saves it even unchanged, so every week starts with his current weight. The Coach page weight box is gone; the scorecard, brief and Weight card read the saved weight. A value outside 120 to 300 lb is not saved and the sync line warns.
 
 ### Next
 
