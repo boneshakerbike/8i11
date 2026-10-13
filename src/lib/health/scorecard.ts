@@ -44,6 +44,8 @@ export interface ScoreRow {
   target: string;
   status: ScoreStatus;
   note?: string;
+  /** Why a row is behind or not met, in a few words, for the one-line summary. */
+  reason?: string;
 }
 
 export interface ScorecardActivity {
@@ -123,8 +125,15 @@ function count_status(count: number, target: number, days_done: number): ScoreSt
   if (count >= target) return 'done';
   const days_left = 7 - days_done; // today included
   if (target - count > days_left) return 'missed';
-  return count >= Math.round((target * days_done) / 7) ? 'on_track' : 'behind';
+  return count >= pace(target, days_done) ? 'on_track' : 'behind';
 }
+
+/** How many of a weekly count should be done after `days_done` finished days. */
+const pace = (target: number, days_done: number) => Math.round((target * days_done) / 7);
+
+/** Short weekday names, e.g. "Tue, Wed". */
+const day_names = (dates: string[]) =>
+  dates.map(d => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })).join(', ');
 
 /**
  * A daily target such as "a ride every day", over the days so far: missed once
@@ -158,7 +167,10 @@ function vital_row(
   const where = now < m - band ? 'below normal' : now > m + band ? 'above normal' : 'normal';
   const worse = higher_is_better ? now < m - band : now > m + band;
   const range = low === high ? `${low}` : `${low}-${high}`;
-  return { key, label, value, target, status: worse ? 'behind' : 'on_track', note: `Normal ${range} ${unit}; now ${where}` };
+  return {
+    key, label, value, target, status: worse ? 'behind' : 'on_track', note: `Normal ${range} ${unit}; now ${where}`,
+    reason: worse ? `${where.replace(' normal', '')} your normal` : undefined,
+  };
 }
 
 export function weekly_scorecard(input: ScorecardInput): Scorecard {
@@ -185,31 +197,42 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
 
   const rows: ScoreRow[] = [];
 
+  const ride_pace = (TARGETS.ride_min * days_done) / 7;
+  const ride_status: ScoreStatus = ride_min >= TARGETS.ride_min ? 'done' : ride_min >= ride_pace ? 'on_track' : 'behind';
   rows.push({
-    key: 'ride_time', label: 'Ride time', value: hm(ride_min), target: hm(TARGETS.ride_min),
-    status: ride_min >= TARGETS.ride_min ? 'done' : ride_min >= (TARGETS.ride_min * days_done) / 7 ? 'on_track' : 'behind',
+    key: 'ride_time', label: 'Ride time', value: hm(ride_min), target: hm(TARGETS.ride_min), status: ride_status,
+    reason: ride_status === 'behind' ? `pace is ${hm(ride_pace)} by now` : undefined,
   });
 
+  const no_ride = days.filter(d => d < today && !ride_days.has(d));
   rows.push({
     key: 'ride_days', label: 'Ride days', value: `${ride_days.size} of ${days.length}`, target: 'every day',
     status: every_day_status(ride_days, days, today, 7),
+    reason: no_ride.length > 0 ? `no ride ${day_names(no_ride)}` : undefined,
   });
 
   const mobility_done = new Set(work_days.filter(d => mobility_days.has(d)));
+  const no_mobility = work_days.filter(d => d < today && !mobility_done.has(d));
   rows.push({
     key: 'mobility', label: 'Yoga / mobility', value: `${mobility_done.size} of ${work_days.length} work days`, target: 'every work day',
     status: every_day_status(mobility_done, work_days, today, 5),
+    reason: no_mobility.length > 0 ? `none ${day_names(no_mobility)}` : undefined,
   });
 
+  const heavy_status = count_status(heavy.length, TARGETS.heavy_per_week, days_done);
   rows.push({
     key: 'heavy', label: 'Heavy strength', value: `${heavy.length} of ${TARGETS.heavy_per_week}`, target: `${TARGETS.heavy_per_week} a week`,
-    status: count_status(heavy.length, TARGETS.heavy_per_week, days_done),
+    status: heavy_status,
     note: unread > 0 ? `${plural(unread, 'strength session')} not classified yet` : undefined,
+    reason: heavy_status === 'behind' ? `pace is ${pace(TARGETS.heavy_per_week, days_done)} by now`
+      : heavy_status === 'missed' ? `too few days left for ${TARGETS.heavy_per_week}` : undefined,
   });
 
+  const interval_status = count_status(intervals.length, TARGETS.intervals_per_week, days_done);
   rows.push({
     key: 'intervals', label: 'Intervals', value: `${intervals.length} of ${TARGETS.intervals_per_week}`, target: `${TARGETS.intervals_per_week} a week (4x4)`,
-    status: count_status(intervals.length, TARGETS.intervals_per_week, days_done),
+    status: interval_status,
+    reason: interval_status === 'behind' ? 'none yet' : undefined,
   });
 
   const nights = input.sleep.filter(s => in_week(s.date) && s.total_min != null && s.total_min > 0).map(s => s.total_min as number);
@@ -218,10 +241,12 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   } else {
     const avg = mean(nights);
     const short = nights.filter(n => n < TARGETS.sleep_floor_min).length;
+    const why = [avg < TARGETS.sleep_goal_min ? 'average under 8h' : '', short > 0 ? `${plural(short, 'night')} under 7h` : ''].filter(Boolean);
     rows.push({
       key: 'sleep', label: 'Sleep', value: `${hm(avg)} avg over ${plural(nights.length, 'night')}`, target: '8h avg, 7h minimum',
-      status: avg >= TARGETS.sleep_goal_min && short === 0 ? 'on_track' : 'behind',
+      status: why.length === 0 ? 'on_track' : 'behind',
       note: short > 0 ? `${plural(short, 'night')} under 7h` : undefined,
+      reason: why.length > 0 ? why.join(', ') : undefined,
     });
   }
 
@@ -238,7 +263,11 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
     const status: ScoreStatus = high > TARGETS.weight_max_lbs ? 'missed'
       : low < TARGETS.weight_goal_lbs ? 'done'
       : count_status(0, 1, days_done);
-    rows.push({ key: 'weight', label: 'Weight', value: weights.length === 1 ? `${low} lb` : `${low}-${high} lb`, target: weight_target, status });
+    rows.push({
+      key: 'weight', label: 'Weight', value: weights.length === 1 ? `${low} lb` : `${low}-${high} lb`, target: weight_target, status,
+      reason: status === 'missed' ? `${high} lb is over ${TARGETS.weight_max_lbs}`
+        : status === 'behind' ? `not under ${TARGETS.weight_goal_lbs} yet` : undefined,
+    });
   }
 
   return { week_start: start, week_end: end, today, rows };
@@ -247,14 +276,15 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
 export interface ScorecardSummary {
   ok: number;       // rows done or on track
   judged: number;   // rows with data to judge
-  behind: string[]; // labels of rows behind
-  missed: string[]; // labels of rows missed
+  behind: string[]; // rows behind, as "Label (reason)"
+  missed: string[]; // rows not met, as "Label (reason)"
   level: 'good' | 'behind' | 'missed';
 }
 
-/** The one-line view: how many targets are fine, and which ones need attention. */
+/** The one-line view: how many targets are fine, and which ones need attention and why. */
 export function scorecard_summary(rows: ScoreRow[]): ScorecardSummary {
-  const labels = (status: ScoreStatus) => rows.filter(r => r.status === status).map(r => r.label);
+  const labels = (status: ScoreStatus) =>
+    rows.filter(r => r.status === status).map(r => (r.reason ? `${r.label} (${r.reason})` : r.label));
   const behind = labels('behind');
   const missed = labels('missed');
   return {

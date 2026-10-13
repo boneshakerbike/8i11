@@ -14,7 +14,7 @@ const STATUS: Record<ScoreStatus, { label: string; className: string }> = {
   done: { label: 'Done', className: 'text-green-300 bg-green-950 border-green-800' },
   on_track: { label: 'On track', className: 'text-emerald-300 bg-emerald-950/60 border-emerald-900' },
   behind: { label: 'Behind', className: 'text-amber-300 bg-amber-950 border-amber-800' },
-  missed: { label: 'Missed', className: 'text-red-300 bg-red-950 border-red-800' },
+  missed: { label: 'Not met', className: 'text-red-300 bg-red-950 border-red-800' },
   no_data: { label: 'No data', className: 'text-gray-400 bg-zinc-800 border-zinc-700' },
 }
 
@@ -75,8 +75,8 @@ export default function WeeklyScorecard() {
           </span>
           <span className={`text-xs text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
         </div>
-        {summary.missed.length > 0 && <div className="text-xs text-red-300">Missed: {summary.missed.join(', ')}</div>}
-        {summary.behind.length > 0 && <div className="text-xs text-amber-300">Behind: {summary.behind.join(', ')}</div>}
+        {summary.missed.length > 0 && <div className="text-xs text-red-300">Not met: {summary.missed.join('; ')}</div>}
+        {summary.behind.length > 0 && <div className="text-xs text-amber-300">Behind: {summary.behind.join('; ')}</div>}
       </button>
 
       {open && (

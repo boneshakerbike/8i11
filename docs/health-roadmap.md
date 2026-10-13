@@ -187,9 +187,9 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 ### In progress
 
 - Phase 3, step 1: weekly scorecard (`src/lib/health/scorecard.ts`, `/api/coaching/scorecard`, box on `/coach`).
-  - Collapsed by default to one line: "N of M on track", colored by the worst status, naming anything missed or behind. Tap to see every row; the choice is remembered on the device.
+  - Collapsed by default to one line: "N of M on track", colored by the worst status, naming anything not met or behind with a short reason (e.g. "Weight (197.1 lb is over 195)"). Tap to see every row; the choice is remembered on the device. "Missed" was renamed "Not met" after it read as "weight missing" (2026-10-13).
   - This week, Monday to Sunday Mountain Time, against the targets in Decisions. Plain counting, no AI; the coach will read the same rows.
-  - Status per row: Done, On track (at the pace needed through yesterday), Behind, Missed (no longer reachable this week, or weight over 195), No data.
+  - Status per row: Done, On track (at the pace needed through yesterday), Behind, Not met (no longer reachable this week, or weight over 195), No data.
   - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
   - Rides count built-in bike types 200 to 205 plus custom 9806 (e-MTB). Yoga/mobility counts strength sessions not classified heavy, on Monday to Friday.
   - Sleep, HRV and resting HR come from the Oura cache, with coach-session history (`daily_metrics`, the same Oura numbers) filling days the cache lacks. The old daily job never ran, so the cache alone was too thin for a 90-day normal (seen on the first preview, 2026-10-12).
