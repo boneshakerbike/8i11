@@ -1,7 +1,8 @@
 /**
  * API route: POST /api/coaching/chat
  * Multi-turn coaching conversation. Optimized for 1-3 turns.
- * Oura drives decisions. Ride with GPS is context. No COROS.
+ * The first message is the daily brief (Oura recovery, COROS training).
+ * Every reply stays under 995 characters (src/lib/coaching/share-limit.ts).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,6 +12,24 @@ import { MODELS } from '@/lib/models';
 import { COACHING_SYSTEM_PROMPT } from '@/lib/coaching/system-prompt';
 import { get_recent_sessions } from '@/lib/coaching/db';
 import { normalizeCoachText } from '@/lib/coaching/normalize-text';
+import { within_share_limit } from '@/lib/coaching/share-limit';
+
+/** One cheap rewrite when a reply runs over the share limit. */
+async function shorten_reply(client: Anthropic, text: string): Promise<string> {
+  const response = await client.messages.create({
+    model: MODELS.COACHING_REFINE,
+    max_tokens: 400,
+    messages: [{
+      role: 'user',
+      content: `Rewrite this coaching reply in under 900 characters, spaces included. Keep today's prescription and any warning. Same voice, no preamble, no em dashes.\n\n${text}`,
+    }],
+  });
+  const content = response.content[0];
+  return content.type === 'text' ? normalizeCoachText(content.text) : text;
+}
+
+// A reply plus, rarely, one shortening rewrite
+export const maxDuration = 60;
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -111,8 +130,10 @@ export async function POST(request: NextRequest) {
       throw new Error('Unexpected response type');
     }
 
+    const reply = await within_share_limit(normalizeCoachText(content.text), text => shorten_reply(client, text));
+
     return NextResponse.json({
-      response: normalizeCoachText(content.text),
+      response: reply,
       turn: turn_number,
       usage: {
         input_tokens: response.usage.input_tokens,

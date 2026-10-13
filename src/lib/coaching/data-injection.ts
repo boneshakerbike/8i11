@@ -1,13 +1,17 @@
 /**
- * Data injection formatter for coaching sessions.
- * Pulls Oura data from wellness_cache + Ride with GPS activities + manual inputs.
- * No COROS. Oura drives decisions. Activity data is context only.
+ * Coach session data: the daily brief the coach reads (Oura recovery, COROS
+ * training, the weekly scorecard, typed inputs) and the metrics the Coach page
+ * shows. Device load scores are never included (#193).
  */
 
-import { get_wellness_cache } from '@/lib/db';
-import { get_trends, get_last_known_manual_metrics, type TrendRow } from '@/lib/coaching/db';
+import { get_client, get_wellness_cache, type WellnessSnapshot } from '@/lib/db';
+import { get_back_history, get_trends, get_last_known_manual_metrics, get_weights, type TrendRow } from '@/lib/coaching/db';
+import { shift_date } from '@/lib/coaching/day';
+import { get_coros_activities } from '@/lib/coros/data';
 import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
+import { build_daily_brief, last_night_from_oura } from '@/lib/health/daily-brief';
+import { load_scorecard } from '@/lib/health/scorecard-data';
 
 export interface ManualInputs {
   weight_lbs?: number;
@@ -37,25 +41,6 @@ interface OuraStressDetail {
   stress_high?: number;
   recovery_high?: number;
   day_summary?: string;
-}
-
-function seconds_to_hm(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return `${h}h ${m}m`;
-}
-
-function fmt_trend(value: number | null, trends: Map<string, TrendRow>, metric: string, unit: string): string {
-  if (value === null || value === undefined) return 'no data';
-  const t = trends.get(metric);
-  let s = `${value}${unit}`;
-  if (t) {
-    if (t.value_7day_avg !== null) s += ` (7d avg: ${t.value_7day_avg}${unit}`;
-    if (t.value_30day_avg !== null) s += `, 30d avg: ${t.value_30day_avg}${unit}`;
-    if (t.value_7day_direction && t.value_7day_direction !== 'stable') s += ` [${t.value_7day_direction}]`;
-    s += ')';
-  }
-  return s;
 }
 
 function compute_recovery_status(
@@ -108,9 +93,11 @@ function compute_recovery_status(
 }
 
 /**
- * Build the data injection string for a coaching session.
+ * Build the coach's data for a session: the daily brief (src/lib/health/daily-brief.ts)
+ * as the injection text, plus the metrics the Coach page displays.
  * date_str: YYYY-MM-DD format
  * epoch_day: mt_epoch_day() (Mountain Time day boundary) for trend_cache lookup
+ * coros_problem: set when COROS could not be refreshed at session start
  */
 export async function build_data_injection(
   date_str: string,
@@ -118,25 +105,29 @@ export async function build_data_injection(
   manual: ManualInputs,
   oura_live?: Record<string, unknown> | null,
   activities?: RwgpsActivity[] | null,
+  coros_problem?: string | null,
 ): Promise<{ injection: string; metrics: Record<string, unknown> }> {
-  const yesterday = new Date(date_str + 'T12:00:00');
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterday_str = yesterday.toISOString().split('T')[0];
+  const yesterday_str = shift_date(date_str, 1);
 
-  const [oura_initial, trend_rows, last_manual] = await Promise.all([
+  const [oura_cached, trend_rows, last_manual, scorecard, yesterday_activities, weights, back_history] = await Promise.all([
     get_wellness_cache(date_str),
     get_trends(epoch_day),
     get_last_known_manual_metrics(),
+    load_scorecard(date_str, manual.weight_lbs ?? null),
+    get_coros_activities(get_client(), yesterday_str, yesterday_str),
+    get_weights(epoch_day - 6, epoch_day),
+    get_back_history(epoch_day - 7, epoch_day - 1),
   ]);
-  let oura = oura_initial;
 
-  // If live Oura data was passed from the client, use it over cache
+  // Today's Oura data: live from the client first, else the cache. Oura files
+  // last night's sleep under today, so this is last night or nothing.
+  let oura_today: WellnessSnapshot | null = oura_cached;
   if (oura_live && oura_live.success) {
     const scores = oura_live.scores as Record<string, unknown> | undefined;
     const daily_sleep = (oura_live.sleep ?? oura_live.daily_sleep) as OuraSleepDetail | undefined;
     const readiness = (oura_live.readiness ?? oura_live.daily_readiness) as OuraReadinessDetail | undefined;
     const stress = (oura_live.stress ?? oura_live.daily_stress) as OuraStressDetail | undefined;
-    oura = {
+    oura_today = {
       date: date_str,
       sleep_score: (scores?.sleep as number) ?? null,
       readiness_score: (scores?.readiness as number) ?? null,
@@ -165,178 +156,107 @@ export async function build_data_injection(
     };
   }
 
-  // Fall back to yesterday's cached data if today's isn't available
-  if (!oura) {
-    oura = await get_wellness_cache(yesterday_str);
-  }
+  // The page's metric cards fall back to yesterday's cache; the brief never does.
+  const oura = oura_today ?? await get_wellness_cache(yesterday_str);
 
   const trends = new Map<string, TrendRow>();
   for (const row of trend_rows) {
     trends.set(row.metric_name, row);
   }
 
-  // Build metrics object for pre-chat display
+  // Metrics for the Coach page display
   const metrics: Record<string, unknown> = {};
-  const lines: string[] = [];
-  lines.push(`Health data for ${date_str}:`);
-  lines.push('');
 
-  // --- OURA ---
-  const oura_label = oura?.date === yesterday_str ? `using ${yesterday_str} data` : '';
   if (oura) {
     const readiness = oura.daily_readiness as OuraReadinessDetail | null;
     const cv_age = oura.daily_cardiovascular_age as OuraCardiovascularAge | null;
     const stress = oura.daily_stress as OuraStressDetail | null;
-
     // Sleep durations come from sleep_detail (period data), not daily_sleep (scores only)
     const sleep_period = primary_sleep(oura.sleep_detail as Record<string, unknown>[] | null) as OuraSleepDetail | null;
 
     const readiness_val = readiness?.score ?? oura.readiness_score ?? null;
     const hrv_val = oura.hrv_average ?? null;
     const rhr_val = oura.resting_hr ?? null;
-    const spo2_val = oura.spo2_average ?? null;
-
     metrics.readiness = readiness_val;
     metrics.hrv = hrv_val;
     metrics.resting_hr = rhr_val;
-    metrics.spo2 = spo2_val;
+    metrics.spo2 = oura.spo2_average ?? null;
     metrics.sleep_score = oura.sleep_score;
 
-    if (oura_label) lines.push(`(Oura ${oura_label})`);
-    lines.push(`Readiness: ${readiness_val ?? 'N/A'}/100`);
-    lines.push(`HRV: ${fmt_trend(hrv_val, trends, 'hrv_rmssd', 'ms')}`);
-    lines.push(`Resting HR: ${fmt_trend(rhr_val, trends, 'resting_hr', ' bpm')}`);
-
     if (sleep_period) {
-      const total = sleep_period.total_sleep_duration ? seconds_to_hm(sleep_period.total_sleep_duration) : 'N/A';
-      const deep = sleep_period.deep_sleep_duration ? seconds_to_hm(sleep_period.deep_sleep_duration) : 'N/A';
-      const rem = sleep_period.rem_sleep_duration ? seconds_to_hm(sleep_period.rem_sleep_duration) : 'N/A';
-      const deep_min = sleep_period.deep_sleep_duration ? Math.round(sleep_period.deep_sleep_duration / 60) : null;
-      const rem_min = sleep_period.rem_sleep_duration ? Math.round(sleep_period.rem_sleep_duration / 60) : null;
-      const efficiency = sleep_period.efficiency ? `${sleep_period.efficiency}%` : 'N/A';
-      lines.push(`Sleep: ${total} total, ${deep} deep, ${rem} REM, efficiency ${efficiency}`);
       metrics.sleep_total = sleep_period.total_sleep_duration ? Math.round(sleep_period.total_sleep_duration / 60) : null;
-      metrics.deep_sleep_min = deep_min;
-      metrics.rem_sleep_min = rem_min;
+      metrics.deep_sleep_min = sleep_period.deep_sleep_duration ? Math.round(sleep_period.deep_sleep_duration / 60) : null;
+      metrics.rem_sleep_min = sleep_period.rem_sleep_duration ? Math.round(sleep_period.rem_sleep_duration / 60) : null;
       metrics.sleep_efficiency = sleep_period.efficiency ?? null;
-    } else if (oura.sleep_score) {
-      lines.push(`Sleep score: ${oura.sleep_score}`);
     }
 
-    if (spo2_val) {
-      lines.push(`SpO2: ${spo2_val}%`);
-      metrics.spo2 = spo2_val;
-    }
-
-    if (cv_age?.vascular_age) {
-      lines.push(`Cardiovascular age: ${cv_age.vascular_age}`);
-      metrics.cv_age = cv_age.vascular_age;
-    } else {
-      // Estimate CV age from HRV + RHR (Umetani regression)
-      const estimated_cv_age = estimate_cv_age(hrv_val, rhr_val);
-      if (estimated_cv_age != null) {
-        lines.push(`Cardiovascular age: ~${estimated_cv_age} (estimated from HRV + RHR)`);
-        metrics.cv_age = estimated_cv_age;
-      }
-    }
+    // Oura's API returns no CV age, so estimate it from HRV + RHR (Umetani regression)
+    metrics.cv_age = cv_age?.vascular_age ?? estimate_cv_age(hrv_val, rhr_val);
 
     if (stress) {
       const stressed_min = stress.stress_high ? Math.round(stress.stress_high / 60) : null;
       const restored_min = stress.recovery_high ? Math.round(stress.recovery_high / 60) : null;
       if (stressed_min !== null || restored_min !== null) {
-        lines.push(`Stress: ${stressed_min ?? '?'}min stressed, ${restored_min ?? '?'}min restored`);
         metrics.stress_min = stressed_min;
         metrics.restored_min = restored_min;
-
-        // Resilience indicator: stress-recovery balance
-        if (stressed_min !== null && restored_min !== null) {
-          const total = stressed_min + restored_min;
-          if (total > 0) {
-            const recovery_pct = Math.round((restored_min / total) * 100);
-            let resilience: string;
-            if (recovery_pct >= 65) resilience = 'High recovery, low stress';
-            else if (recovery_pct >= 50) resilience = 'Balanced';
-            else if (recovery_pct >= 35) resilience = 'Elevated stress';
-            else resilience = 'High stress, low recovery';
-            metrics.resilience = resilience;
-            metrics.resilience_pct = recovery_pct;
-            lines.push(`Resilience: ${resilience} (${recovery_pct}% recovery)`);
-          }
+        if (stressed_min !== null && restored_min !== null && stressed_min + restored_min > 0) {
+          const recovery_pct = Math.round((restored_min / (stressed_min + restored_min)) * 100);
+          metrics.resilience = recovery_pct >= 65 ? 'High recovery, low stress'
+            : recovery_pct >= 50 ? 'Balanced'
+            : recovery_pct >= 35 ? 'Elevated stress'
+            : 'High stress, low recovery';
+          metrics.resilience_pct = recovery_pct;
         }
       }
     }
-    // Compute recovery status from available signals
-    const recovery_status = compute_recovery_status(
-      readiness_val, hrv_val, sleep_period, stress, rhr_val, trends
-    );
-    metrics.recovery_status = recovery_status;
-    lines.push(`Recovery status: ${recovery_status}`);
-  } else {
-    lines.push('No Oura data available');
+    metrics.recovery_status = compute_recovery_status(readiness_val, hrv_val, sleep_period, stress, rhr_val, trends);
   }
 
-  lines.push('');
-
-  // --- ACTIVITIES (yesterday) ---
-  if (activities && activities.length > 0) {
-    // Filter to yesterday's activities
-    const yesterday_activities = activities.filter(a => {
-      if (!a.departed_at) return false;
-      return rwgps_activity_date_str(a.departed_at) === yesterday_str;
-    });
-
-    if (yesterday_activities.length > 0) {
-      lines.push(`Yesterday's activities (${yesterday_str}):`);
-      metrics.yesterday_activities = [];
-      for (const a of yesterday_activities.slice(0, 5)) {
-        const name = a.name || 'Activity';
-        const type = a.type || '';
-        const dist = a.distance ? `${(a.distance / 1609.34).toFixed(1)}mi` : '';
-        const elev = a.total_elevation_gain ? `${Math.round(a.total_elevation_gain * 3.281)}ft elev` : '';
-        const time = a.moving_time ? `${Math.round(a.moving_time / 60)}min` : '';
-        const hr = a.average_heartrate ? `avg HR ${Math.round(a.average_heartrate)}` : '';
-        const parts = [type, dist, elev, time, hr].filter(Boolean).join(', ');
-        lines.push(`- ${name}: ${parts}`);
-        (metrics.yesterday_activities as RwgpsActivity[]).push({
-          id: a.id, name, type, distance: a.distance, moving_time: a.moving_time,
-          total_elevation_gain: a.total_elevation_gain,
-          average_heartrate: a.average_heartrate, max_heartrate: a.max_heartrate,
-          url: a.url,
-        });
-      }
-    } else {
-      lines.push('No activities recorded yesterday');
-    }
-  } else {
-    lines.push('No activity data available');
+  // Ride with GPS feeds the page's "Yesterday's Activities" card only; the coach reads COROS
+  const rwgps_yesterday = (activities ?? []).filter(a => a.departed_at && rwgps_activity_date_str(a.departed_at) === yesterday_str);
+  if (rwgps_yesterday.length > 0) {
+    metrics.yesterday_activities = rwgps_yesterday.slice(0, 5).map(a => ({
+      id: a.id, name: a.name || 'Activity', type: a.type || '', distance: a.distance, moving_time: a.moving_time,
+      total_elevation_gain: a.total_elevation_gain,
+      average_heartrate: a.average_heartrate, max_heartrate: a.max_heartrate,
+      url: a.url,
+    }));
   }
 
-  lines.push('');
-
-  // --- WEIGHT & MANUAL ---
   if (manual.weight_lbs !== undefined) {
-    lines.push(`Weight: ${fmt_trend(manual.weight_lbs, trends, 'weight_lbs', ' lbs')}`);
     metrics.weight = manual.weight_lbs;
-  } else if (last_manual.weight_lbs !== null && last_manual.weight_date !== null) {
-    const d = new Date(last_manual.weight_date * 86400000).toISOString().split('T')[0];
-    lines.push(`Weight: ${last_manual.weight_lbs} lbs (last entered ${d})`);
+  } else if (last_manual.weight_lbs !== null) {
     metrics.weight = last_manual.weight_lbs;
     metrics.weight_stale = true;
   }
+  if (manual.back_pain_scale !== undefined) metrics.back_pain = manual.back_pain_scale;
 
-  if (manual.back_pain_scale !== undefined) {
-    const back = manual.back_pain_scale;
-    const label = back === 0 ? 'None' : back <= 3 ? 'Mild' : back <= 6 ? 'Moderate' : 'Severe';
-    const mobility = manual.back_mobility_notes ? `, ${manual.back_mobility_notes}` : '';
-    lines.push(`Back: ${label} (${back}/10)${mobility}`);
-    metrics.back_pain = back;
-  }
+  // Today's typed weight replaces any saved reading for today
+  const today_weight = manual.weight_lbs ?? null;
+  const weight_last_7 = [
+    ...weights.filter(w => w.date !== date_str),
+    ...(today_weight != null ? [{ date: date_str, lbs: today_weight }] : []),
+  ];
 
-  if (manual.bowel_status) lines.push(`Bowel: ${manual.bowel_status}`);
-  if (manual.injury_notes) lines.push(`Notes: ${manual.injury_notes}`);
+  const injection = build_daily_brief({
+    today: date_str,
+    last_night: oura_today ? last_night_from_oura({
+      sleep_periods: oura_today.sleep_detail,
+      hrv: oura_today.hrv_average,
+      resting_hr: oura_today.resting_hr,
+      spo2: oura_today.spo2_average,
+      readiness: (oura_today.daily_readiness as OuraReadinessDetail | null)?.score ?? oura_today.readiness_score,
+      resilience: (metrics.resilience as string | undefined) ?? null,
+      status: (metrics.recovery_status as string | undefined) ?? null,
+    }) : null,
+    yesterday: yesterday_activities,
+    coros_problem,
+    scorecard,
+    weight: { today: today_weight, last_7: weight_last_7 },
+    back: { today: manual.back_pain_scale ?? null, notes: manual.back_mobility_notes ?? null, last_7: back_history },
+    bowel: manual.bowel_status ?? null,
+    notes: manual.injury_notes ?? null,
+  });
 
-  lines.push('');
-  lines.push('Coach me.');
-
-  return { injection: lines.join('\n'), metrics };
+  return { injection, metrics };
 }

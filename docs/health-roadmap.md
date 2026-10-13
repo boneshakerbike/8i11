@@ -196,9 +196,19 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - The daily job now fetches Oura through today: Oura files last night's sleep under today, and it is final by midday. Today's partial activity is replaced by the next day's forced re-fetch. The Oura page's Sync button still ends yesterday.
   - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows, 97 coach-history rows and 7 weight rows. No COROS or Oura calls.
 
+- Phase 3, step 2: daily brief (`src/lib/health/daily-brief.ts`), the coach's first message each session, replacing the old injection text.
+  - Pure function, labeled sections: the date, weekday and which night (Mountain Time); RECOVERY (Oura, last night, with the 90-day normal); YESTERDAY (COROS); THIS WEEK (the scorecard, with reasons); BODY (typed weight with 7-day average, back pain by day, notes).
+  - Last night not uploaded yet: the brief says so and tells the coach it is missing data, not a night without sleep. It never shows an older night as last night.
+  - Climbing and descent are separate. A ride with descent at least twice the climbing and over 1,000 ft is marked as a likely lift-assisted bike park day.
+  - Starting a session refreshes COROS first (the Sync now pull, at most 20 seconds), so a ride synced that morning counts. A problem is named in the brief.
+  - Ride with GPS no longer feeds the coach; its card stays on the page until the layout step.
+  - "What the coach sees" on the Coach page shows the exact brief, during and after the session.
+  - Tests cover each past bug: weekday, sleep night, nap as the night, descent as climbing.
+- Coach text length: every reply and the session summary stay under 995 characters, because Bill pastes them into the Oura app's AI chat (`src/lib/coaching/share-limit.ts`). The prompt asks for under 900; a longer reply gets one cheap rewrite, then a cut at the last full sentence as a last resort.
+
 ### Next
 
-- Phase 3, next steps (one at a time): the daily brief (data in, labeled text out), coach memory (framework and profile in the database), the coach reading the brief and scorecard with nudges for what is behind, then the structured session summary.
+- Phase 3, next steps (one at a time): coach memory (framework and profile in the database), the coach nudging what is behind using the brief and scorecard, the model change, then the structured session summary.
 
 ## Regenerating the session dump
 
