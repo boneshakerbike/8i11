@@ -230,7 +230,8 @@ export async function build_data_injection(
   }
   if (manual.back_pain_scale !== undefined) metrics.back_pain = manual.back_pain_scale;
 
-  // Today's typed weight replaces any saved reading for today
+  // A weight passed in for today (no longer sent by the Coach page) replaces
+  // the reading the COROS sync saved for today
   const today_weight = manual.weight_lbs ?? weights.find(w => w.date === date_str)?.lbs ?? null;
   const weight_last_7 = [
     ...weights.filter(w => w.date !== date_str),
