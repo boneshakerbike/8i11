@@ -8,6 +8,8 @@
  *      (filed under today) counts the same day.
  *   2. COROS: pull the last 7 days through MCP into coros_daily / coros_activities.
  *   3. Trends: build yesterday's daily_metrics row, then 7/30-day trend_cache.
+ *   4. Coach memory: copy the framework files from Google Drive (a new
+ *      version is saved only when a file changed).
  * Each step runs even if an earlier one fails, and the run is logged to
  * health_sync_runs so the Health page can show whether it ran.
  * Protected by CRON_SECRET (src/lib/cron_auth.ts).
@@ -23,6 +25,7 @@ import { sync_oura } from '@/lib/health/oura-sync';
 import { sync_coros } from '@/lib/coros/sync';
 import { coros_origin } from '@/lib/coros/mcp-client';
 import { record_sync_run, run_step, type SyncStep } from '@/lib/health/sync-runs';
+import { refresh_coach_memory } from '@/lib/coaching/memory-drive';
 
 export const maxDuration = 60;
 
@@ -54,6 +57,8 @@ export async function GET(request: NextRequest) {
     const cleaned = await cleanup_trend_cache(today);
     return { ok: true, detail: `${trends.rows_written} trend rows, ${cleaned} old trend rows removed` };
   }));
+
+  steps.push(await run_step('memory', () => refresh_coach_memory(db)));
 
   const run = { job: 'daily', started_at, finished_at: Math.floor(Date.now() / 1000), ok: steps.every(s => s.ok), steps };
   try {
