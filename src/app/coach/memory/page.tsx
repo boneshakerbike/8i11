@@ -5,12 +5,14 @@
  * - The framework and biomarker targets, copied from Bill's Google Drive
  *   (refreshed by the daily job, or now with the button).
  * - His profile: facts about him, edited here. Every save is a new version.
+ *   Edits the coach suggests after a session are accepted or rejected here.
  * Stored in the database only, never in the public repo.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import NavTabs from '@/components/nav_tabs'
+import ProfileProposals from '@/components/profile_proposals'
 
 interface MemoryDocumentView {
   kind: string
@@ -137,6 +139,8 @@ export default function CoachMemoryPage() {
           {not_connected && <p className="text-xs text-gray-500">Google Drive is not connected. After connecting, Google returns you to the Say What? page; come back here and press Refresh from Drive.</p>}
           <p className="text-xs text-gray-500">The daily sync copies these every day at midday, so edits you make in Drive reach the coach by the next day.</p>
         </section>
+
+        <ProfileProposals onDecided={load} />
 
         <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
           <div className="flex justify-between items-baseline gap-2">

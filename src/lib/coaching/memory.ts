@@ -9,6 +9,7 @@
  */
 
 import type { Client } from '@libsql/client';
+import { apply_profile_edit, type ProfileEdit } from '@/lib/coaching/session-review';
 
 export type MemoryKind = 'framework' | 'crosswalk' | 'profile';
 
@@ -111,4 +112,107 @@ export async function refresh_memory_from_drive(db: Client, read: DriveDocumentR
   }
   if (problems.length > 0) problems.push('the coach keeps using the last copy');
   return { ok: problems.length === 0, detail: [...done, ...problems].join('; ') };
+}
+
+/**
+ * Profile edits the coach proposed after a session. Bill accepts or rejects
+ * each one on the Coach page or /coach/memory; nothing changes the profile
+ * until he accepts.
+ */
+export type ProposalStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface ProfileProposal extends ProfileEdit {
+  id: number;
+  session_date: string;
+  status: ProposalStatus;
+  created_at: number;
+}
+
+const proposals_ensured = new WeakSet<Client>();
+
+async function ensure_proposals_table(db: Client): Promise<void> {
+  if (proposals_ensured.has(db)) return;
+  await db.batch([
+    `CREATE TABLE IF NOT EXISTS coach_profile_proposals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_date TEXT NOT NULL,
+      action TEXT NOT NULL,
+      old_text TEXT NOT NULL,
+      new_text TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      decided_at INTEGER
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_coach_profile_proposals_status ON coach_profile_proposals(status, id)',
+  ], 'write');
+  proposals_ensured.add(db);
+}
+
+/**
+ * Store a session's proposed edits. A session saved again (same date)
+ * replaces its pending proposals; decided ones are kept.
+ */
+export async function save_profile_proposals(db: Client, session_date: string, edits: ProfileEdit[]): Promise<ProfileProposal[]> {
+  await ensure_proposals_table(db);
+  const now = Math.floor(Date.now() / 1000);
+  await db.execute({ sql: `DELETE FROM coach_profile_proposals WHERE session_date = ? AND status = 'pending'`, args: [session_date] });
+  for (const e of edits) {
+    await db.execute({
+      sql: `INSERT INTO coach_profile_proposals (session_date, action, old_text, new_text, reason, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      args: [session_date, e.action, e.old_text, e.new_text, e.reason, now],
+    });
+  }
+  return list_pending_proposals(db);
+}
+
+export async function list_pending_proposals(db: Client): Promise<ProfileProposal[]> {
+  await ensure_proposals_table(db);
+  const r = await db.execute(`SELECT * FROM coach_profile_proposals WHERE status = 'pending' ORDER BY id`);
+  return r.rows.map(row => ({
+    id: Number(row.id),
+    session_date: String(row.session_date),
+    action: row.action as ProfileEdit['action'],
+    old_text: String(row.old_text),
+    new_text: String(row.new_text),
+    reason: String(row.reason),
+    status: row.status as ProposalStatus,
+    created_at: Number(row.created_at),
+  }));
+}
+
+export type DecideResult =
+  | { ok: true; profile_saved: boolean }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Accept or reject one pending proposal. Accepting applies it to the current
+ * profile and saves a new version. If the line it changes is no longer in the
+ * profile, nothing is saved and the proposal stays pending.
+ */
+export async function decide_proposal(db: Client, id: number, accept: boolean): Promise<DecideResult> {
+  await ensure_proposals_table(db);
+  const r = await db.execute({ sql: `SELECT * FROM coach_profile_proposals WHERE id = ? AND status = 'pending'`, args: [id] });
+  const row = r.rows[0];
+  if (!row) return { ok: false, error: 'This suggestion was already answered or does not exist.', status: 404 };
+  let profile_saved = false;
+  if (accept) {
+    const edit: ProfileEdit = {
+      action: row.action as ProfileEdit['action'],
+      old_text: String(row.old_text),
+      new_text: String(row.new_text),
+      reason: String(row.reason),
+    };
+    const current = (await get_memory_document(db, 'profile'))?.body ?? '';
+    const next = apply_profile_edit(current, edit);
+    if (next == null) return { ok: false, error: 'The profile line this changes is no longer there. Reject it, or edit the profile by hand.', status: 409 };
+    if (next.length > MAX_PROFILE_CHARS) return { ok: false, error: `The profile would be over ${MAX_PROFILE_CHARS.toLocaleString('en-US')} characters. Shorten it first.`, status: 409 };
+    profile_saved = await save_memory_document(db, 'profile', next, `coach:${row.session_date}`);
+  }
+  await db.execute({
+    sql: `UPDATE coach_profile_proposals SET status = ?, decided_at = ? WHERE id = ?`,
+    args: [accept ? 'accepted' : 'rejected', Math.floor(Date.now() / 1000), id],
+  });
+  return { ok: true, profile_saved };
 }

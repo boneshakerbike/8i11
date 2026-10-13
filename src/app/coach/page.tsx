@@ -12,6 +12,8 @@ import Link from 'next/link';
 import NavTabs from '@/components/nav_tabs';
 import SyncStatus from '@/components/sync_status';
 import WeeklyScorecard from '@/components/weekly_scorecard';
+import ProfileProposals from '@/components/profile_proposals';
+import type { ProfileProposal } from '@/lib/coaching/memory';
 import { mt_date_str, mt_epoch_day, epoch_day_to_date_str } from '@/lib/coaching/day';
 import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
@@ -225,6 +227,7 @@ export default function CoachPage() {
   const [metricsCollapsed, setMetricsCollapsed] = useState(false);
   const [finalized, setFinalized] = useState(false);
   const [savedSummary, setSavedSummary] = useState('');
+  const [proposals, setProposals] = useState<ProfileProposal[] | undefined>(undefined);
   const [todaySession, setTodaySession] = useState<HistorySession | null>(null);
   const [todayChecked, setTodayChecked] = useState(false);
   const [startNewAnyway, setStartNewAnyway] = useState(false);
@@ -659,6 +662,7 @@ export default function CoachPage() {
       const data = await res.json();
       setFinalized(true);
       setSavedSummary(data.summary || '');
+      setProposals(data.proposals ?? []);
       try {
         sessionStorage.removeItem(`coach_manual_inputs_${dateStr}`);
         sessionStorage.removeItem(`coach_session_${dateStr}`);
@@ -907,6 +911,7 @@ export default function CoachPage() {
                     <div className="mt-1 text-gray-400 whitespace-pre-wrap">{parseAdviceFull(todaySession.advice_full).conversation}</div>
                   </details>
                 </div>
+                <ProfileProposals />
                 <button
                   onClick={() => setStartNewAnyway(true)}
                   className="text-xs text-gray-500 hover:text-gray-300 underline decoration-zinc-700 transition-colors"
@@ -987,6 +992,7 @@ export default function CoachPage() {
               <div className="text-center py-3 space-y-2">
                 <p className="text-green-400 text-sm">Session saved.</p>
                 {savedSummary && <p className="text-gray-400 text-xs">{savedSummary}</p>}
+                <ProfileProposals initial={proposals} />
               </div>
             ) : (
               <div className="space-y-2">

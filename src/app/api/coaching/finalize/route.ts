@@ -1,18 +1,26 @@
 /**
  * API route: POST /api/coaching/finalize
- * Saves coaching session with auto-generated summary.
- * Stores: full conversation, summary, daily metrics.
+ * Saves the coaching session with a structured review (summary, facts
+ * learned, decisions, developer notes) and the profile edits the coach
+ * proposes, which Bill accepts or rejects. Also stores daily metrics.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
+import { get_client } from '@/lib/db';
 import { save_coaching_session, populate_daily_metrics, type InjectMetrics } from '@/lib/coaching/db';
-import { normalizeCoachText } from '@/lib/coaching/normalize-text';
-import { fit_to_limit } from '@/lib/coaching/share-limit';
+import { get_memory_document, save_profile_proposals, type ProfileProposal } from '@/lib/coaching/memory';
+import { REVIEW_SCHEMA, review_prompt, validate_review, type SessionReview } from '@/lib/coaching/session-review';
+import { epoch_day_to_date_str } from '@/lib/coaching/day';
 
-async function generate_summary(conversation: string): Promise<string | null> {
+/**
+ * Ask the small model for the structured review. Null when there is no API
+ * key, the call fails, or the output does not validate: then the session is
+ * saved without a summary or review, never with a half-checked one.
+ */
+async function review_session(conversation: string, profile: string | null): Promise<SessionReview | null> {
   const api_key = process.env.ANTHROPIC_API_KEY;
   if (!api_key) return null;
 
@@ -20,16 +28,16 @@ async function generate_summary(conversation: string): Promise<string | null> {
     const client = new Anthropic({ apiKey: api_key });
     const response = await client.messages.create({
       model: MODELS.COACHING_REFINE,
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Summarize this coaching session in 2-3 sentences, under 800 characters, spaces included. Focus on: what was the main advice, any flags raised, and what was prescribed for today. No preamble, no em dashes.\n\n${conversation}`,
-      }],
+      max_tokens: 2000,
+      output_config: { format: { type: 'json_schema', schema: REVIEW_SCHEMA as unknown as Record<string, unknown> } },
+      messages: [{ role: 'user', content: review_prompt(conversation, profile) }],
     });
-    const content = response.content[0];
-    // Bill pastes the summary into the Oura app's AI chat, which takes 995 characters
-    return content.type === 'text' ? fit_to_limit(normalizeCoachText(content.text)) : null;
-  } catch {
+    if (response.stop_reason !== 'end_turn') return null;
+    const text = response.content.find(b => b.type === 'text');
+    if (!text || text.type !== 'text') return null;
+    return validate_review(JSON.parse(text.text), profile);
+  } catch (err) {
+    console.error('Session review failed:', err);
     return null;
   }
 }
@@ -57,9 +65,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'date and advice_full are required' }, { status: 400 });
     }
 
-    // Generate summary and save in parallel
-    const [summary] = await Promise.all([
-      generate_summary(advice_full),
+    const db = get_client();
+    const profile = (await get_memory_document(db, 'profile').catch(() => null))?.body ?? null;
+    const [review] = await Promise.all([
+      review_session(advice_full, profile),
       date_str ? populate_daily_metrics(date_str, date, manual, inject_metrics) : Promise.resolve(),
     ]);
 
@@ -71,12 +80,20 @@ export async function POST(request: NextRequest) {
     await save_coaching_session({
       date,
       advice_full: full_with_context,
-      advice_summary: summary,
+      advice_summary: review?.summary ?? null,
+      summary_json: review ? JSON.stringify(review) : null,
       conversation_turns,
       token_count,
     });
 
-    return NextResponse.json({ ok: true, summary });
+    // Proposals only change the profile once Bill accepts them on the page
+    let proposals: ProfileProposal[] = [];
+    if (review) {
+      proposals = await save_profile_proposals(db, date_str || epoch_day_to_date_str(date), review.profile_edits)
+        .catch(err => { console.error('Saving profile proposals failed:', err); return []; });
+    }
+
+    return NextResponse.json({ ok: true, summary: review?.summary ?? null, proposals });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Finalize failed' },

@@ -45,6 +45,13 @@ describe('build_coach_system', () => {
     expect(text).not.toContain('Session 7.');
   });
 
+  it('adds what a past session decided and learned from its review', () => {
+    const reviewed = { ...session(20738, 'Easy spin today.'), summary_json: JSON.stringify({ decisions: ['Heavy lift Wednesday'], facts_learned: ['New saddle'] }) };
+    const text = build_coach_system(EMPTY, [reviewed, { ...session(20737, 'Rest.'), summary_json: 'not json' }]);
+    expect(text).toContain('Easy spin today.\nDecided: Heavy lift Wednesday\nLearned: New saddle');
+    expect(text).toContain('Rest.');
+  });
+
   it('uses the conversation when a session has no summary, without its data block', () => {
     const text = build_coach_system(EMPTY, [session(20738, null, '[Data for this session]\nHRV 70\n\n[Conversation]\nRest today.')]);
     expect(text).toContain('[Monday, Oct 12, 2026] Rest today.');
