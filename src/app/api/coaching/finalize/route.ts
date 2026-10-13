@@ -9,6 +9,8 @@ import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
 import { save_coaching_session, populate_daily_metrics, type InjectMetrics } from '@/lib/coaching/db';
+import { normalizeCoachText } from '@/lib/coaching/normalize-text';
+import { fit_to_limit } from '@/lib/coaching/share-limit';
 
 async function generate_summary(conversation: string): Promise<string | null> {
   const api_key = process.env.ANTHROPIC_API_KEY;
@@ -18,14 +20,15 @@ async function generate_summary(conversation: string): Promise<string | null> {
     const client = new Anthropic({ apiKey: api_key });
     const response = await client.messages.create({
       model: MODELS.COACHING_REFINE,
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Summarize this coaching session in 2-3 sentences. Focus on: what was the main advice, any flags raised, and what was prescribed for today. No preamble.\n\n${conversation}`,
+        content: `Summarize this coaching session in 2-3 sentences, under 800 characters, spaces included. Focus on: what was the main advice, any flags raised, and what was prescribed for today. No preamble, no em dashes.\n\n${conversation}`,
       }],
     });
     const content = response.content[0];
-    return content.type === 'text' ? content.text : null;
+    // Bill pastes the summary into the Oura app's AI chat, which takes 995 characters
+    return content.type === 'text' ? fit_to_limit(normalizeCoachText(content.text)) : null;
   } catch {
     return null;
   }

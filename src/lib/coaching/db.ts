@@ -345,6 +345,16 @@ export async function get_weights(start_epoch: number, end_epoch: number): Promi
   return result.rows.map(row => ({ date: epoch_day_to_date_str(Number(row.date)), lbs: Number(row.weight_lbs) }));
 }
 
+/** Back pain readings between two epoch days, as YYYY-MM-DD dates. */
+export async function get_back_history(start_epoch: number, end_epoch: number): Promise<Array<{ date: string; scale: number }>> {
+  await ensure_schema();
+  const result = await get_client().execute({
+    sql: 'SELECT date, back_pain_scale FROM daily_metrics WHERE date >= ? AND date <= ? AND back_pain_scale IS NOT NULL ORDER BY date',
+    args: [start_epoch, end_epoch],
+  });
+  return result.rows.map(row => ({ date: epoch_day_to_date_str(Number(row.date)), scale: Number(row.back_pain_scale) }));
+}
+
 /**
  * Get the most recent non-null weight and back_pain from daily_metrics.
  * Used as fallback when manual inputs aren't provided for today's session.

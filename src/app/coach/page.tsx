@@ -876,6 +876,12 @@ export default function CoachPage() {
                   ) : (
                     <p className="text-sm text-gray-500">Session saved — no summary was generated.</p>
                   )}
+                  {parseAdviceFull(todaySession.advice_full).dataSnapshot && (
+                    <details className="text-xs">
+                      <summary className="text-gray-500 cursor-pointer">What the coach saw</summary>
+                      <div className="mt-1 text-gray-500 whitespace-pre-wrap bg-zinc-950 rounded p-2">{parseAdviceFull(todaySession.advice_full).dataSnapshot}</div>
+                    </details>
+                  )}
                   <details className="text-xs">
                     <summary className="text-gray-500 cursor-pointer">Full conversation</summary>
                     <div className="mt-1 text-gray-400 whitespace-pre-wrap">{parseAdviceFull(todaySession.advice_full).conversation}</div>
@@ -942,9 +948,9 @@ export default function CoachPage() {
         {/* Chat */}
         {sessionStarted && (
           <div className="space-y-3">
-            {/* Collapsed metrics summary during chat */}
+            {/* The daily brief the coach was given, so a wrong number can be caught */}
             <details className="text-xs">
-              <summary className="text-gray-500 cursor-pointer">Today&apos;s data</summary>
+              <summary className="text-gray-500 cursor-pointer">What the coach sees</summary>
               <div className="mt-1 text-gray-500 whitespace-pre-wrap bg-zinc-950 rounded p-2">{dataInjection}</div>
             </details>
 
