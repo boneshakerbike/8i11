@@ -243,3 +243,25 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
 
   return { week_start: start, week_end: end, today, rows };
 }
+
+export interface ScorecardSummary {
+  ok: number;       // rows done or on track
+  judged: number;   // rows with data to judge
+  behind: string[]; // labels of rows behind
+  missed: string[]; // labels of rows missed
+  level: 'good' | 'behind' | 'missed';
+}
+
+/** The one-line view: how many targets are fine, and which ones need attention. */
+export function scorecard_summary(rows: ScoreRow[]): ScorecardSummary {
+  const labels = (status: ScoreStatus) => rows.filter(r => r.status === status).map(r => r.label);
+  const behind = labels('behind');
+  const missed = labels('missed');
+  return {
+    ok: rows.filter(r => r.status === 'done' || r.status === 'on_track').length,
+    judged: rows.filter(r => r.status !== 'no_data').length,
+    behind,
+    missed,
+    level: missed.length > 0 ? 'missed' : behind.length > 0 ? 'behind' : 'good',
+  };
+}

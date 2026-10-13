@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fill_gaps, weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
+import { fill_gaps, scorecard_summary, weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
 import { shift_date } from '@/lib/coaching/day';
 
 // Week of Monday 2026-10-12 to Sunday 2026-10-18. Made-up values.
@@ -188,5 +188,20 @@ describe('fill_gaps', () => {
     const rows = card(today, { vitals: fill_gaps([], history) }).rows;
     expect(row(rows, 'hrv').status).toBe('on_track');
     expect(row(rows, 'hrv').note).toMatch(/^Normal \d+-\d+ ms; now normal$/);
+  });
+});
+
+describe('scorecard_summary', () => {
+  const r = (label: string, status: ScoreRow['status']): ScoreRow => ({ key: 'sleep', label, value: '', target: '', status });
+
+  it('counts done and on track as fine, and leaves rows without data out', () => {
+    const rows = [r('Ride time', 'on_track'), r('Ride days', 'done'), r('Sleep', 'no_data')];
+    expect(scorecard_summary(rows)).toEqual({ ok: 2, judged: 2, behind: [], missed: [], level: 'good' });
+  });
+
+  it('names what needs attention, missed first in level', () => {
+    const rows = [r('Ride time', 'on_track'), r('Heavy strength', 'behind'), r('Weight', 'missed')];
+    expect(scorecard_summary(rows)).toEqual({ ok: 1, judged: 3, behind: ['Heavy strength'], missed: ['Weight'], level: 'missed' });
+    expect(scorecard_summary(rows.slice(0, 2)).level).toBe('behind');
   });
 });

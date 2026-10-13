@@ -187,6 +187,7 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 ### In progress
 
 - Phase 3, step 1: weekly scorecard (`src/lib/health/scorecard.ts`, `/api/coaching/scorecard`, box on `/coach`).
+  - Collapsed by default to one line: "N of M on track", colored by the worst status, naming anything missed or behind. Tap to see every row; the choice is remembered on the device.
   - This week, Monday to Sunday Mountain Time, against the targets in Decisions. Plain counting, no AI; the coach will read the same rows.
   - Status per row: Done, On track (at the pace needed through yesterday), Behind, Missed (no longer reachable this week, or weight over 195), No data.
   - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
