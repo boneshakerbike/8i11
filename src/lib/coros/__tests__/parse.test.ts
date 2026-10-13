@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clock_seconds, duration_text_min, iso_date, parse_daily_health, parse_fitness, parse_recovery,
-  parse_resting_hr, parse_sleep_hrv, parse_sport_records, parse_strength_laps, parse_training_load, tool_text,
+  parse_resting_hr, parse_sleep_hrv, parse_sport_records, parse_strength_laps, parse_training_load, parse_user_weight, tool_text,
 } from '@/lib/coros/parse';
 import * as F from './fixtures';
 
@@ -214,5 +214,26 @@ describe('parse_strength_laps', () => {
     expect(parse_strength_laps('{"lapGroups":[{"rows":[]}]}')).toBeNull();
     // Laps but no summary row: the rule the counts rely on no longer holds
     expect(parse_strength_laps('{"lapGroups":[{"laps":[{"exerciseNameKey":"Squat","sets":0,"weight":20}]}]}')).toBeNull();
+  });
+});
+
+describe('parse_user_weight (queryUserInfo; made-up values)', () => {
+  it('reads a labeled weight in kg or lb and returns pounds', () => {
+    expect(parse_user_weight('User Info\nHeight: 180 cm\nWeight: 88.5 kg\nBirthday: 19000101\nGender: Male')).toBe(195.1);
+    expect(parse_user_weight('Weight: 192.4 lbs')).toBe(192.4);
+    expect(parse_user_weight('Weight (kg): 86')).toBe(189.6);
+  });
+
+  it('reads JSON and a unitless number by its size', () => {
+    expect(parse_user_weight('{"height":180,"weight":87.2,"birthday":19000101}')).toBe(192.2);
+    expect(parse_user_weight('{"weight": 191.0}')).toBe(191);
+    expect(parse_user_weight('{"weight": 86500}')).toBe(190.7); // grams
+  });
+
+  it('keeps nothing but the weight, and nothing unbelievable', () => {
+    expect(parse_user_weight('Height: 180 cm\nGender: Male')).toBeNull();
+    expect(parse_user_weight('Weight: 0 kg')).toBeNull();
+    expect(parse_user_weight('Weight: 65535')).toBeNull(); // COROS "no value"
+    expect(parse_user_weight('Weight: 450 lbs')).toBeNull();
   });
 });

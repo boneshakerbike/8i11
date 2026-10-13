@@ -121,7 +121,7 @@ describe('weekly_scorecard: sleep and weight', () => {
     const weights = [{ date: day(0), lbs: 192 }];
     expect(row(card(day(3), { weights }).rows, 'weight').status).toBe('on_track');
     expect(row(card(day(4), { weights }).rows, 'weight').status).toBe('behind');
-    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'no_data', note: 'No weight entered this week' });
+    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'no_data', note: 'No COROS weight this week' });
   });
 });
 

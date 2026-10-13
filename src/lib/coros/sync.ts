@@ -13,11 +13,12 @@ import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { call_coros_read_tool, coros_connection_status, describe_coros_error, with_coros, type CorosReadTool } from '@/lib/coros/mcp-client';
 import {
   parse_activity_detail, parse_daily_health, parse_fitness, parse_recovery, parse_resting_hr,
-  parse_sleep_hrv, parse_sport_records, parse_strength_laps, parse_training_load, tool_text, type CorosActivity,
+  parse_sleep_hrv, parse_sport_records, parse_strength_laps, parse_training_load, parse_user_weight, tool_text,
+  type CorosActivity,
 } from '@/lib/coros/parse';
 import {
-  activities_needing_detail, save_activity_detail, save_coros_activities, save_coros_days, save_strength_laps,
-  type CorosDay,
+  activities_needing_detail, save_activity_detail, save_coros_activities, save_coros_days, save_coros_weight,
+  save_strength_laps, type CorosDay,
 } from '@/lib/coros/data';
 import { STRENGTH_SPORT_TYPE } from '@/lib/coros/classify';
 import { shift_date } from '@/lib/coaching/day';
@@ -28,6 +29,8 @@ const compact = (date: string) => date.replaceAll('-', '');
 export interface CorosPull {
   days: CorosDay[];
   activities: CorosActivity[];
+  /** The profile weight right now, in pounds (COROS keeps no history of it). */
+  weight_lbs: number | null;
   warnings: string[];
 }
 
@@ -79,8 +82,9 @@ export async function pull_coros_week(client: McpClient, today: string): Promise
   if (fitness) day(today).vo2max = fitness.vo2max;
 
   const activities = await read('querySportRecords', { startDate: start, endDate: end, limit: 50 }, parse_sport_records, len) ?? [];
+  const weight_lbs = await read('queryUserInfo', {}, parse_user_weight, one);
 
-  return { days: [...by_date.values()], activities, warnings };
+  return { days: [...by_date.values()], activities, weight_lbs, warnings };
 }
 
 /** Most detail or lap calls per run; a normal day adds one to three activities. */
@@ -142,13 +146,26 @@ export async function sync_coros(db: LibsqlClient, origin: string, today: string
       const pull = await pull_coros_week(client, today);
       const days = await save_coros_days(db, pull.days);
       const activities = await save_coros_activities(db, pull.activities);
+      const weight_warnings: string[] = [];
+      let weight_saved = false;
+      if (pull.weight_lbs != null) {
+        try {
+          weight_saved = await save_coros_weight(db, today, pull.weight_lbs);
+        } catch (err) {
+          weight_warnings.push(`weight not saved: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
+        }
+      }
       const details = await fill_activity_details(client, db);
-      return { days, activities, details, warnings: [...pull.warnings, ...details.warnings] };
+      return {
+        days, activities, weight_saved, weight: pull.weight_lbs, details,
+        warnings: [...pull.warnings, ...weight_warnings, ...details.warnings],
+      };
     });
     const elevation = outcome.details.filled > 0 ? `, elevation for ${outcome.details.filled}` : '';
     const exercises = outcome.details.strength > 0 ? `, exercises for ${outcome.details.strength}` : '';
     const waiting = outcome.details.waiting > 0 ? `, ${outcome.details.waiting} more next run` : '';
-    const detail = [`${outcome.days} days, ${outcome.activities} activities${elevation}${exercises}${waiting}`, ...outcome.warnings].join('; ');
+    const weight = outcome.weight_saved ? `, weight ${outcome.weight} lb` : '';
+    const detail = [`${outcome.days} days, ${outcome.activities} activities${weight}${elevation}${exercises}${waiting}`, ...outcome.warnings].join('; ');
     return { step: 'coros', ok: outcome.warnings.length === 0, detail };
   } catch (err) {
     if (err instanceof UnauthorizedError) {

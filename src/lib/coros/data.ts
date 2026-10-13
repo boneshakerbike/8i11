@@ -168,6 +168,29 @@ export async function save_strength_laps(db: Client, label_id: string, laps: Cor
   });
 }
 
+/**
+ * Save the COROS profile weight as today's weight (daily_metrics.weight_lbs,
+ * which the scorecard, brief and Weight card read). COROS keeps only the
+ * current value with no date, so it is saved only when it differs from the
+ * latest saved weight: on a morning Bill didn't update it (a trip), the old
+ * number must not count as a new reading. Returns true when saved.
+ */
+export async function save_coros_weight(db: Client, today: string, lbs: number): Promise<boolean> {
+  const epoch_day = Math.floor(Date.parse(`${today}T00:00:00Z`) / 86400000);
+  const latest = await db.execute({
+    sql: 'SELECT weight_lbs FROM daily_metrics WHERE weight_lbs IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1',
+    args: [epoch_day],
+  });
+  const previous = latest.rows[0]?.weight_lbs;
+  if (previous != null && Math.abs(Number(previous) - lbs) < 0.05) return false;
+  await db.execute({
+    sql: `INSERT INTO daily_metrics (date, weight_lbs, created_at, updated_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT(date) DO UPDATE SET weight_lbs = excluded.weight_lbs, updated_at = excluded.updated_at`,
+    args: [epoch_day, lbs, now_s(), now_s()],
+  });
+  return true;
+}
+
 export async function save_coros_days(db: Client, days: CorosDay[]): Promise<number> {
   if (days.length === 0) return 0;
   await ensure_coros_tables(db);

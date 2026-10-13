@@ -223,16 +223,15 @@ export async function build_data_injection(
     }));
   }
 
-  if (manual.weight_lbs !== undefined) {
-    metrics.weight = manual.weight_lbs;
-  } else if (last_manual.weight_lbs !== null) {
+  // Weight comes from COROS (saved by the COROS sync); stale when not from today
+  if (last_manual.weight_lbs !== null) {
     metrics.weight = last_manual.weight_lbs;
-    metrics.weight_stale = true;
+    metrics.weight_stale = last_manual.weight_date !== epoch_day;
   }
   if (manual.back_pain_scale !== undefined) metrics.back_pain = manual.back_pain_scale;
 
   // Today's typed weight replaces any saved reading for today
-  const today_weight = manual.weight_lbs ?? null;
+  const today_weight = manual.weight_lbs ?? weights.find(w => w.date === date_str)?.lbs ?? null;
   const weight_last_7 = [
     ...weights.filter(w => w.date !== date_str),
     ...(today_weight != null ? [{ date: date_str, lbs: today_weight }] : []),

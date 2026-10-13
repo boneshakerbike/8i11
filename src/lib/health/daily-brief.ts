@@ -246,7 +246,7 @@ export function build_daily_brief(input: BriefInput): string {
   }
 
   // --- Body (typed) ---
-  lines.push('', 'BODY (typed by Bill)');
+  lines.push('', 'BODY (weight from COROS; back pain and notes typed by Bill)');
   const w = input.weight;
   const avg = w.last_7.length ? w.last_7.reduce((s, r) => s + r.lbs, 0) / w.last_7.length : null;
   const avg_text = avg != null && w.last_7.length > 1 ? `. 7-day avg ${avg.toFixed(1)} lb over ${w.last_7.length} readings` : '';
@@ -254,7 +254,7 @@ export function build_daily_brief(input: BriefInput): string {
     lines.push(`Weight ${w.today} lb today${avg_text}`);
   } else {
     const last = [...w.last_7].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
-    lines.push(last ? `Weight not entered today; last ${last.lbs} lb on ${long_date(last.date)}${avg_text}` : 'Weight not entered in the last 7 days');
+    lines.push(last ? `No COROS weight today; last ${last.lbs} lb on ${long_date(last.date)}${avg_text}` : 'No COROS weight in the last 7 days');
   }
   const b = input.back;
   const history = [...b.last_7].sort((x, y) => (x.date < y.date ? -1 : 1)).map(r => `${weekday(r.date, 'short')} ${r.scale}`).join(', ');
