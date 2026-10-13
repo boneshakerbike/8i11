@@ -6,6 +6,7 @@
  */
 
 import type { CoachMemory } from '@/lib/coaching/memory';
+import { parse_stored_review, review_memory_lines } from '@/lib/coaching/session-review';
 import { COACHING_SYSTEM_PROMPT, DEFAULT_PROFILE, FALLBACK_FRAMEWORK } from '@/lib/coaching/system-prompt';
 
 /** How many past sessions the coach remembers, in full. */
@@ -15,6 +16,8 @@ export interface PastSession {
   date: number; // epoch day (Mountain Time)
   advice_summary: string | null;
   advice_full: string;
+  /** The session's validated review as JSON, when it has one. */
+  summary_json?: string | null;
 }
 
 const day_label = (epoch_day: number) =>
@@ -22,7 +25,8 @@ const day_label = (epoch_day: number) =>
 
 /** The saved summary, else the conversation without the data block that starts it. */
 function session_text(s: PastSession): string {
-  if (s.advice_summary?.trim()) return s.advice_summary.trim();
+  const review = review_memory_lines(parse_stored_review(s.summary_json));
+  if (s.advice_summary?.trim()) return review ? `${s.advice_summary.trim()}\n${review}` : s.advice_summary.trim();
   const conversation = s.advice_full.split('[Conversation]').pop() ?? s.advice_full;
   const text = conversation.trim();
   return text.length > 995 ? `${text.slice(0, 992)}...` : text;

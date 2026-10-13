@@ -216,6 +216,13 @@ async function init_schema(): Promise<void> {
     )
   `);
 
+  // Migration: structured session review (decisions, facts learned) as JSON
+  try {
+    await db.execute(`ALTER TABLE coaching_history ADD COLUMN summary_json TEXT`);
+  } catch {
+    // Column already exists, ignore error
+  }
+
   // Migration: add spo2_average column to daily_metrics
   try {
     await db.execute(`ALTER TABLE daily_metrics ADD COLUMN spo2_average REAL`);

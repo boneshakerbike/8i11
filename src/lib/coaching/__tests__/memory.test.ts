@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createClient } from '@libsql/client';
 import {
-  DRIVE_DOCUMENTS, MAX_DOCUMENT_CHARS, get_coach_memory, get_memory_document, refresh_memory_from_drive, save_memory_document,
+  DRIVE_DOCUMENTS, MAX_DOCUMENT_CHARS, decide_proposal, get_coach_memory, get_memory_document, list_pending_proposals,
+  refresh_memory_from_drive, save_memory_document, save_profile_proposals,
   type DriveDocumentReader,
 } from '@/lib/coaching/memory';
 
@@ -61,5 +62,37 @@ describe('refresh_memory_from_drive', () => {
     const memory = await get_coach_memory(db);
     expect(memory.framework?.body).toBe('v1');
     expect(memory.crosswalk?.body).toBe('c1');
+  });
+});
+
+describe('profile proposals', () => {
+  const add = (text: string) => ({ action: 'add' as const, old_text: '', new_text: text, reason: 'He said so.' });
+
+  it('changes the profile only when accepted, as a new version from the coach', async () => {
+    const db = createClient({ url: ':memory:' });
+    await save_memory_document(db, 'profile', 'Rides an e-MTB.', 'app');
+    const [a, b] = await save_profile_proposals(db, '2026-10-13', [add('Has a new saddle.'), add('Owns a rower.')]);
+    expect(await decide_proposal(db, b.id, false)).toEqual({ ok: true, profile_saved: false });
+    expect((await get_memory_document(db, 'profile'))?.body).toBe('Rides an e-MTB.');
+    expect(await decide_proposal(db, a.id, true)).toEqual({ ok: true, profile_saved: true });
+    expect(await get_memory_document(db, 'profile')).toMatchObject({ body: 'Rides an e-MTB.\nHas a new saddle.', source: 'coach:2026-10-13', versions: 2 });
+    expect(await list_pending_proposals(db)).toEqual([]);
+    expect((await decide_proposal(db, a.id, true)).ok).toBe(false);
+  });
+
+  it('keeps a proposal pending when its line was edited away', async () => {
+    const db = createClient({ url: ':memory:' });
+    await save_memory_document(db, 'profile', 'Knee is sore.', 'app');
+    const [p] = await save_profile_proposals(db, '2026-10-13', [{ action: 'remove', old_text: 'Knee is sore.', new_text: '', reason: 'Fine now.' }]);
+    await save_memory_document(db, 'profile', 'Knee is fine.', 'app');
+    expect(await decide_proposal(db, p.id, true)).toMatchObject({ ok: false, status: 409 });
+    expect(await list_pending_proposals(db)).toHaveLength(1);
+  });
+
+  it('replaces pending proposals when the same session is saved again', async () => {
+    const db = createClient({ url: ':memory:' });
+    await save_profile_proposals(db, '2026-10-13', [add('First try.')]);
+    const list = await save_profile_proposals(db, '2026-10-13', [add('Second try.')]);
+    expect(list.map(p => p.new_text)).toEqual(['Second try.']);
   });
 });

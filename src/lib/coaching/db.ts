@@ -172,6 +172,8 @@ export async function save_coaching_session(session: {
   advice_summary: string | null;
   conversation_turns: number;
   token_count: number;
+  /** The validated SessionReview as JSON; null when the review failed. */
+  summary_json?: string | null;
 }): Promise<void> {
   await ensure_schema();
   const db = get_client();
@@ -179,9 +181,9 @@ export async function save_coaching_session(session: {
 
   await db.execute({
     sql: `INSERT OR REPLACE INTO coaching_history
-          (date, advice_full, advice_summary, conversation_turns, token_count, framework_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [session.date, session.advice_full, session.advice_summary, session.conversation_turns, session.token_count, '1.0', now],
+          (date, advice_full, advice_summary, conversation_turns, token_count, framework_version, created_at, summary_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [session.date, session.advice_full, session.advice_summary, session.conversation_turns, session.token_count, '1.0', now, session.summary_json ?? null],
   });
 }
 
@@ -383,6 +385,7 @@ export interface CoachingSession {
   date: number;
   advice_full: string;
   advice_summary: string | null;
+  summary_json?: string | null;
   conversation_turns: number;
   created_at: number;
 }
@@ -395,7 +398,7 @@ export async function get_recent_sessions(limit: number = 3, offset: number = 0)
   await ensure_schema();
   const db = get_client();
   const result = await db.execute({
-    sql: `SELECT date, advice_full, advice_summary, conversation_turns, created_at
+    sql: `SELECT date, advice_full, advice_summary, summary_json, conversation_turns, created_at
           FROM coaching_history ORDER BY date DESC LIMIT ? OFFSET ?`,
     args: [limit, offset],
   });
@@ -403,6 +406,7 @@ export async function get_recent_sessions(limit: number = 3, offset: number = 0)
     date: Number(row.date),
     advice_full: row.advice_full as string,
     advice_summary: (row.advice_summary as string) ?? null,
+    summary_json: (row.summary_json as string | null) ?? null,
     conversation_turns: Number(row.conversation_turns),
     created_at: Number(row.created_at),
   }));
