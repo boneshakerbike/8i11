@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { build_daily_brief, is_lift_assisted, last_night_from_oura, type BriefInput, type LastNight } from '@/lib/health/daily-brief';
+import { build_daily_brief, is_lift_assisted, last_night_from_oura, must_mention, type BriefInput, type LastNight } from '@/lib/health/daily-brief';
 import { weekly_scorecard } from '@/lib/health/scorecard';
 import type { StoredCorosActivity } from '@/lib/coros/data';
 
@@ -138,5 +138,51 @@ describe('build_daily_brief: this week and body', () => {
   it('lists back pain by day so a "spikes this week" claim can be checked', () => {
     const text = brief({ back: { today: 3, notes: 'stiff', last_7: [{ date: YESTERDAY, scale: 9 }, { date: '2026-10-10', scale: 2 }] } });
     expect(text).toContain('Back 3/10 today (stiff). Last 7 days: Sat 2, Mon 9');
+  });
+});
+
+describe('must_mention: weekly to-dos the coach has to name', () => {
+  // Week of Monday 2026-10-12
+  const card = (today: string, extra: Partial<Parameters<typeof weekly_scorecard>[0]> = {}) =>
+    weekly_scorecard({ today, activities: [], sleep: [], vitals: [], weights: [], ...extra });
+
+  it('waits until Wednesday', () => {
+    expect(must_mention(card('2026-10-13'), '2026-10-13')).toEqual([]); // Tuesday: heavy is already behind
+    expect(must_mention(card('2026-10-14'), '2026-10-14').map(r => r.key)).toContain('heavy');
+  });
+
+  it('names actions only: not missed ride or yoga days, not HRV or resting HR', () => {
+    const thursday = '2026-10-15';
+    const vitals = [
+      ...Array.from({ length: 90 }, (_, i) => ({ date: `2026-${i < 60 ? '08' : '07'}-${String((i % 28) + 1).padStart(2, '0')}`, hrv: i % 2 ? 40 : 50, resting_hr: 50 })),
+    ];
+    const keys = must_mention(card(thursday, {
+      vitals,
+      sleep: [{ date: '2026-10-12', total_min: 400 }],
+      weights: [{ date: '2026-10-12', lbs: 197.1 }],
+    }), thursday).map(r => r.key);
+    expect(keys).toEqual(['ride_time', 'heavy', 'intervals', 'sleep', 'weight']);
+    expect(keys).not.toContain('ride_days');
+    expect(keys).not.toContain('mobility');
+  });
+
+  it('drops an item once it is done', () => {
+    const thursday = '2026-10-15';
+    const heavy = (date: string) => ({ date, sport_type: 402, duration_s: 2700, working_sets: 8, loaded_sets: 6, anaerobic_te: null, training_focus: null });
+    const keys = must_mention(card(thursday, { activities: [heavy('2026-10-12'), heavy('2026-10-13'), heavy('2026-10-14')] }), thursday).map(r => r.key);
+    expect(keys).not.toContain('heavy');
+  });
+
+  it('puts the list in the brief from Wednesday, with the reasons', () => {
+    const scorecard = card('2026-10-15', { weights: [{ date: '2026-10-12', lbs: 197.1 }] });
+    const text = build_daily_brief({
+      today: '2026-10-15', last_night: NIGHT, yesterday: [], scorecard,
+      weight: { today: null, last_7: [] }, back: { today: null, notes: null, last_7: [] }, bowel: null, notes: null,
+    });
+    expect(text).toContain('MUST MENTION (weekly to-dos from his framework, not done yet; name each one in your first reply)');
+    expect(text).toContain('- Intervals: 0 of 1; still to do this week'); // on pace until Friday, named anyway
+    expect(text).toContain('- Heavy strength: 0 of 3; pace is 1 by now');
+    expect(text).toContain('- Weight (not met): 197.1 lb; 197.1 lb is over 195');
+    expect(brief()).not.toContain('MUST MENTION'); // Tuesday
   });
 });

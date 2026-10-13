@@ -16,6 +16,7 @@ import { get_coach_memory } from '@/lib/coaching/memory';
 import { SESSION_MEMORY, build_coach_system } from '@/lib/coaching/coach-prompt';
 import { normalizeCoachText } from '@/lib/coaching/normalize-text';
 import { within_share_limit } from '@/lib/coaching/share-limit';
+import { DECLINED_REPLY, reply_text } from '@/lib/coaching/reply';
 
 /** One cheap rewrite when a reply runs over the share limit. */
 async function shorten_reply(client: Anthropic, text: string): Promise<string> {
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rules + framework + profile + recent sessions: the same for every turn of a session
-    const system_blocks: Anthropic.TextBlockParam[] = [
+    const system_blocks: Anthropic.Beta.BetaTextBlockParam[] = [
       { type: 'text', text: await coach_system(), cache_control: { type: 'ephemeral' } },
     ];
     if (turn_hint) system_blocks.push({ type: 'text', text: turn_hint });
@@ -106,20 +107,23 @@ export async function POST(request: NextRequest) {
 
     const client = new Anthropic({ apiKey: api_key });
 
-    const response = await client.messages.create({
+    const response = await client.beta.messages.create({
       model: MODELS.COACHING_DAILY,
-      max_tokens: 1024,
-      thinking: { type: 'disabled' },
+      // Room for the model's thinking as well as the short reply
+      max_tokens: 8000,
+      // Opus 5.5 always thinks; low effort keeps replies quick and cheap
+      output_config: { effort: 'low' },
+      // A mistaken safety decline is re-run on Anthropic's recommended fallback model
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
       system: system_blocks,
       messages,
     });
 
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type');
-    }
+    const text = response.stop_reason === 'refusal' ? DECLINED_REPLY : reply_text(response.content);
+    if (!text) throw new Error(`The coach returned no reply (stop reason: ${response.stop_reason})`);
 
-    const reply = await within_share_limit(normalizeCoachText(content.text), text => shorten_reply(client, text));
+    const reply = await within_share_limit(normalizeCoachText(text), t => shorten_reply(client, t));
 
     return NextResponse.json({
       response: reply,
@@ -127,10 +131,8 @@ export async function POST(request: NextRequest) {
       usage: {
         input_tokens: response.usage.input_tokens,
         output_tokens: response.usage.output_tokens,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        cache_creation_input_tokens: (response.usage as any).cache_creation_input_tokens ?? 0,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        cache_read_input_tokens: (response.usage as any).cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? 0,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens ?? 0,
       },
     });
   } catch (error) {

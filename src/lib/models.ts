@@ -12,7 +12,9 @@ export const MODELS = {
   CLEAN_TEXT:       'claude-sonnet-5',
   STRIP:            'claude-haiku-4-5-20251001',
   SUBSTACK:         'claude-sonnet-5',
-  COACHING_DAILY:   'claude-sonnet-5',
+  // Opus 5.5 always thinks (no "disabled"); the coach route sets low effort
+  // and reads the reply by block type (src/lib/coaching/reply.ts).
+  COACHING_DAILY:   'claude-opus-5-5',
   COACHING_REFINE:  'claude-haiku-4-5-20251001',
   DRIVE_KNOWLEDGE:  'claude-sonnet-5',
 }

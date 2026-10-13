@@ -151,6 +151,32 @@ function activity_line(a: StoredCorosActivity): string {
   return `- ${name}: ${parts.join(', ')}${flags.length ? `. ${flags.join('; ')}` : ''}`;
 }
 
+/** Monday = 1 ... Sunday = 7, within the scorecard's week. */
+const day_of_week = (card: Scorecard, today: string) =>
+  Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${card.week_start}T12:00:00Z`)) / 86400000) + 1;
+
+/**
+ * Weekly to-dos the coach must name in its first reply (the coach never
+ * mentioned heavy strength or intervals for two months). Only actions:
+ * a missed ride or yoga day can't be undone, and HRV and resting HR are
+ * recovery signals, not to-dos.
+ */
+export const NUDGE_KEYS: readonly ScoreRow['key'][] = ['heavy', 'intervals', 'ride_time', 'sleep', 'weight'];
+/**
+ * Heavy strength and intervals are named until done, even on pace: a once-a-week
+ * session only falls behind pace on Friday, too late to plan it.
+ */
+export const UNTIL_DONE_KEYS: readonly ScoreRow['key'][] = ['heavy', 'intervals'];
+/** Nudges start Wednesday: earlier in the week the pace is too short to judge. */
+export const NUDGE_FROM_DAY = 3;
+
+export function must_mention(card: Scorecard, today: string): ScoreRow[] {
+  if (day_of_week(card, today) < NUDGE_FROM_DAY) return [];
+  return card.rows.filter(r => NUDGE_KEYS.includes(r.key) && (
+    r.status === 'behind' || r.status === 'missed' || (UNTIL_DONE_KEYS.includes(r.key) && r.status === 'on_track')
+  ));
+}
+
 function row_line(r: ScoreRow): string {
   return `- ${r.label}: ${r.value} (target ${r.target}): ${STATUS[r.status]}${r.reason ? `, ${r.reason}` : ''}${r.note ? `. ${r.note}` : ''}`;
 }
@@ -203,13 +229,21 @@ export function build_daily_brief(input: BriefInput): string {
 
   // --- This week ---
   const card = input.scorecard;
-  const day_of_week = Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${card.week_start}T12:00:00Z`)) / 86400000) + 1;
   const summary = scorecard_summary(card.rows);
-  lines.push('', `THIS WEEK (${long_date(card.week_start)} to ${long_date(card.week_end)}; day ${day_of_week} of 7)`);
+  lines.push('', `THIS WEEK (${long_date(card.week_start)} to ${long_date(card.week_end)}; day ${day_of_week(card, today)} of 7)`);
   lines.push(`${summary.ok} of ${summary.judged} on track`);
   if (summary.missed.length) lines.push(`Not met: ${summary.missed.join('; ')}`);
   if (summary.behind.length) lines.push(`Behind: ${summary.behind.join('; ')}`);
   for (const r of card.rows) lines.push(row_line(r));
+
+  const nudges = must_mention(card, today);
+  if (nudges.length > 0) {
+    lines.push('', 'MUST MENTION (weekly to-dos from his framework, not done yet; name each one in your first reply)');
+    for (const r of nudges) {
+      const why = r.reason ?? (r.status === 'on_track' ? 'still to do this week' : '');
+      lines.push(`- ${r.label}${r.status === 'missed' ? ' (not met)' : ''}: ${r.value}${why ? `; ${why}` : ''}`);
+    }
+  }
 
   // --- Body (typed) ---
   lines.push('', 'BODY (typed by Bill)');

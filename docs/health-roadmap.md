@@ -213,9 +213,16 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - The system prompt is the general rules, then the framework ("the framework wins where it differs from what he wants; change position only for new information"), the targets, the profile and the last 7 sessions in full (was 3 cut to 300 characters). It is one cached block per session; the per-turn hint sits after it.
   - Resource use: about 4 Drive requests a day; the prompt grows by about 7,000 tokens, cached across a session's turns.
 
+- Phase 3, step 4: nudges and the model change.
+  - From Wednesday (`NUDGE_FROM_DAY`), the brief ends THIS WEEK with a MUST MENTION list (`must_mention`, `src/lib/health/daily-brief.ts`): heavy strength and intervals until done (a once-a-week session only falls behind pace on Friday), and ride time, sleep and weight when behind or not met. Missed ride or yoga days (can't be undone) and HRV / resting HR (signals, not to-dos) are not nudged.
+  - The prompt makes the coach name every item in its first reply with one concrete way to fit it in, every session until done, and hold to the framework on pushback unless given new information.
+  - Coach model: `claude-opus-5-5` at `effort: low`. Thinking is always on with this model, so the reply is read by block type (`src/lib/coaching/reply.ts`) and `max_tokens` leaves room for thinking. A safety decline is re-run on Anthropic's recommended fallback model (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`); if every model declines, the coach says it could not answer.
+  - `@anthropic-ai/sdk` 0.71 to 0.133 for these request fields.
+  - Cost (Claude API, paid): about 8 cents per session start at Opus 5.5 prices, cached follow-up turns much less.
+
 ### Next
 
-- Phase 3, next steps (one at a time): the coach nudging what is behind using the brief and scorecard, plus the model change; then the structured session summary with proposed profile edits.
+- Phase 3, next step: the coach keeps the profile up to date (a first draft from Drive health notes and past sessions; after each session, proposed edits Bill accepts or rejects), with the structured session summary.
 
 ## Regenerating the session dump
 
