@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
+import { fill_gaps, weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
 import { shift_date } from '@/lib/coaching/day';
 
 // Week of Monday 2026-10-12 to Sunday 2026-10-18. Made-up values.
@@ -152,9 +152,41 @@ describe('weekly_scorecard: HRV and resting HR against the 90-day normal', () =>
     expect(row(rows, 'resting_hr')).toMatchObject({ status: 'on_track', note: 'Normal 49-51 bpm; now below normal' });
   });
 
+  it('shows a single number when the normal range rounds to one value', () => {
+    const steady = baseline.map(b => ({ ...b, resting_hr: 50 }));
+    expect(row(card(today, { vitals: [...steady, ...recent(46, 50)] }).rows, 'resting_hr').note).toBe('Normal 50 bpm; now normal');
+  });
+
   it('waits for enough history before judging', () => {
     const rows = card(today, { vitals: [...baseline.slice(0, 10), ...recent(46, 50)] }).rows;
     expect(row(rows, 'hrv')).toMatchObject({ status: 'no_data', note: 'Building your normal: 10 of 28 days so far' });
     expect(row(card(today, { vitals: baseline }).rows, 'hrv')).toMatchObject({ status: 'no_data', note: 'Fewer than 3 nights in the last 7 days' });
+  });
+});
+
+describe('fill_gaps', () => {
+  it('keeps cache values and fills missing days and values from coach history', () => {
+    const cache = [
+      { date: '2026-10-10', hrv: 44, resting_hr: null },
+      { date: '2026-10-12', hrv: 47, resting_hr: 50 },
+    ];
+    const history = [
+      { date: '2026-10-09', hrv: 41, resting_hr: 52 },
+      { date: '2026-10-10', hrv: 99, resting_hr: 51 },
+      { date: '2026-10-12', hrv: 99, resting_hr: 99 },
+    ];
+    expect(fill_gaps(cache, history)).toEqual([
+      { date: '2026-10-09', hrv: 41, resting_hr: 52 }, // only in history
+      { date: '2026-10-10', hrv: 44, resting_hr: 51 }, // cache wins, gap filled
+      { date: '2026-10-12', hrv: 47, resting_hr: 50 }, // cache wins
+    ]);
+  });
+
+  it('gives a 90-day normal from coach history alone', () => {
+    const today = day(3);
+    const history = Array.from({ length: 40 }, (_, i) => ({ date: shift_date(today, i), hrv: i % 2 ? 40 : 50, resting_hr: 50 }));
+    const rows = card(today, { vitals: fill_gaps([], history) }).rows;
+    expect(row(rows, 'hrv').status).toBe('on_track');
+    expect(row(rows, 'hrv').note).toMatch(/^Normal \d+-\d+ ms; now normal$/);
   });
 });

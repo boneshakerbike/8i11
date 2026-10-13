@@ -191,7 +191,9 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - Status per row: Done, On track (at the pace needed through yesterday), Behind, Missed (no longer reachable this week, or weight over 195), No data.
   - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
   - Rides count built-in bike types 200 to 205 plus custom 9806 (e-MTB). Yoga/mobility counts strength sessions not classified heavy, on Monday to Friday.
-  - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows and 7 weight rows. No COROS or Oura calls.
+  - Sleep, HRV and resting HR come from the Oura cache, with coach-session history (`daily_metrics`, the same Oura numbers) filling days the cache lacks. The old daily job never ran, so the cache alone was too thin for a 90-day normal (seen on the first preview, 2026-10-12).
+  - The daily job now fetches Oura through today: Oura files last night's sleep under today, and it is final by midday. Today's partial activity is replaced by the next day's forced re-fetch. The Oura page's Sync button still ends yesterday.
+  - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows, 97 coach-history rows and 7 weight rows. No COROS or Oura calls.
 
 ### Next
 

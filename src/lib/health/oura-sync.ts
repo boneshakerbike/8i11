@@ -12,6 +12,7 @@ import {
 } from '@/lib/db';
 import type { OuraTokens, WellnessSnapshot } from '@/lib/db';
 import { primary_sleep } from '@/lib/health/oura-derive';
+import { mt_date_str, shift_date } from '@/lib/coaching/day';
 
 async function oura_fetch(url: string, tokens: OuraTokens): Promise<Response> {
   return fetch(url, {
@@ -48,11 +49,23 @@ const ARRAY_ENDPOINTS = new Set([
   'sleep_detail', 'heartrate', 'workouts', 'sessions'
 ]);
 
+/**
+ * The days to fetch, ending yesterday (Mountain Time): today's steps and
+ * activity are still accumulating. The midday daily job includes today
+ * instead, because Oura files last night's sleep, HRV and resting HR under
+ * today and they are final once Bill has opened the Oura app. Today's partial
+ * activity is replaced by the next day's forced re-fetch.
+ */
+export function oura_sync_range(today: string, days: number, include_today: boolean): { start: string; end: string } {
+  const end = include_today ? today : shift_date(today, 1);
+  return { start: shift_date(end, days - 1), end };
+}
+
 export type OuraSyncResult =
   | { connected: false }
   | { connected: true; synced: number; skipped: number; errors: string[]; range: { start: string; end: string } };
 
-export async function sync_oura(options: { days?: number; force?: boolean } = {}): Promise<OuraSyncResult> {
+export async function sync_oura(options: { days?: number; force?: boolean; include_today?: boolean } = {}): Promise<OuraSyncResult> {
   let tokens = await get_oura_tokens();
   if (!tokens) return { connected: false };
 
@@ -63,29 +76,17 @@ export async function sync_oura(options: { days?: number; force?: boolean } = {}
   const days = Math.min(Math.max(options.days || 7, 1), 30);
   const force = options.force === true;
 
-  // Calculate date range (exclude today MT — data still accumulating)
-  const now_mt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Denver' }));
-  const today = now_mt;
-  const end_date = new Date(today);
-  end_date.setDate(end_date.getDate() - 1);
-  const start_date = new Date(end_date);
-  start_date.setDate(start_date.getDate() - days + 1);
-
-  const start_str = start_date.toISOString().split('T')[0];
-  const end_str = end_date.toISOString().split('T')[0];
+  const { start: start_str, end: end_str } = oura_sync_range(mt_date_str(), days, options.include_today === true);
 
   // Check which dates need syncing
   const dates_to_sync: string[] = [];
   const skipped: string[] = [];
-  const d = new Date(start_date);
-  while (d <= end_date) {
-    const date_str = d.toISOString().split('T')[0];
+  for (let date_str = start_str; date_str <= end_str; date_str = shift_date(date_str, -1)) {
     if (force || !(await is_wellness_cached(date_str))) {
       dates_to_sync.push(date_str);
     } else {
       skipped.push(date_str);
     }
-    d.setDate(d.getDate() + 1);
   }
 
   if (dates_to_sync.length === 0) {
@@ -97,9 +98,7 @@ export async function sync_oura(options: { days?: number; force?: boolean } = {}
   const params = `start_date=${start_str}&end_date=${end_str}`;
 
   // Activity needs +1 day on end_date
-  const activity_end = new Date(end_date);
-  activity_end.setDate(activity_end.getDate() + 1);
-  const activity_params = `start_date=${start_str}&end_date=${activity_end.toISOString().split('T')[0]}`;
+  const activity_params = `start_date=${start_str}&end_date=${shift_date(end_str, -1)}`;
 
   const endpoint_data: Record<string, unknown[]> = {};
   const errors: string[] = [];

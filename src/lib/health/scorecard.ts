@@ -75,6 +75,26 @@ export interface Scorecard {
   rows: ScoreRow[];
 }
 
+/**
+ * One row per date: the first source's values, with the second filling any
+ * value the first lacks. Used to fill gaps in the Oura cache from coach-session
+ * history, which holds the same Oura numbers.
+ */
+export function fill_gaps<T extends { date: string }>(primary: T[], fallback: T[]): T[] {
+  const by_date = new Map<string, T>(fallback.map(r => [r.date, r]));
+  for (const r of primary) {
+    const older = by_date.get(r.date);
+    if (!older) {
+      by_date.set(r.date, r);
+      continue;
+    }
+    const merged: Record<string, unknown> = { ...older };
+    for (const [k, v] of Object.entries(r)) if (v != null) merged[k] = v;
+    by_date.set(r.date, merged as T);
+  }
+  return [...by_date.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 /** 0 = Sunday ... 6 = Saturday */
 const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
 
@@ -137,7 +157,8 @@ function vital_row(
   const high = Math.round(m + band);
   const where = now < m - band ? 'below normal' : now > m + band ? 'above normal' : 'normal';
   const worse = higher_is_better ? now < m - band : now > m + band;
-  return { key, label, value, target, status: worse ? 'behind' : 'on_track', note: `Normal ${low}-${high} ${unit}; now ${where}` };
+  const range = low === high ? `${low}` : `${low}-${high}`;
+  return { key, label, value, target, status: worse ? 'behind' : 'on_track', note: `Normal ${range} ${unit}; now ${where}` };
 }
 
 export function weekly_scorecard(input: ScorecardInput): Scorecard {
