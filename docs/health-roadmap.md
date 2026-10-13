@@ -152,10 +152,8 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 
 ## Needed from Bill
 
-- Which Drive file is the Master SoK.
-- Pillar targets, or confirm the draft pillars.
-- Yes or no on the coach model change.
-- Any research, data or agent review to fold in before Phase 3.
+- Settled 2026-10-12: the core is the Longevity Coaching Framework, the weekly targets are set (Decisions above), and the coach model moves to Opus 5.5.
+- Later in Phase 3: paste the framework text into the app once (coach memory step). It lives in the database, never in this repo.
 
 ## Status
 
@@ -174,9 +172,7 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 
 - Phase 0 (#297): COROS sign-in and read-only probe. Passed on the preview 2026-10-12; findings above.
 
-### In progress
-
-- Phase 2 (branch `claude/health-area-redesign-d8ar3d`):
+- Phase 2 (#298 to #302, merged 2026-10-12):
   - `src/lib/coros/parse.ts`: one parser per read tool, tested on sanitized fixtures and checked once against real output (kept out of the repo).
   - `coros_daily` and `coros_activities` tables (merge writes, never pruned); `src/lib/coros/sync.ts` pulls the last 7 days, so a missed night heals itself. Tool errors and "text but nothing parsed" are reported, not skipped.
   - Production stores the COROS connection under its fixed domain (`coros_origin`, from `VERCEL_PROJECT_PRODUCTION_URL`) so the daily job finds it.
@@ -188,9 +184,18 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - When more activities need a detail or lap call than the 10-per-run cap allows, the sync line says "N more next run" (first seen 2026-10-12: two strength sessions waited silently).
   - Preview test 2026-10-12: Connect, then Sync now returned "7 days, 14 activities" with no warnings.
 
+### In progress
+
+- Phase 3, step 1: weekly scorecard (`src/lib/health/scorecard.ts`, `/api/coaching/scorecard`, box on `/coach`).
+  - This week, Monday to Sunday Mountain Time, against the targets in Decisions. Plain counting, no AI; the coach will read the same rows.
+  - Status per row: Done, On track (at the pace needed through yesterday), Behind, Missed (no longer reachable this week, or weight over 195), No data.
+  - HRV and resting HR: the last 7 days against the 90 days before them. Off normal means more than half a standard deviation from the 90-day mean on the bad side (smallest worthwhile change, Plews et al., Sports Med 2013). Needs 28 days of history first.
+  - Rides count built-in bike types 200 to 205 plus custom 9806 (e-MTB). Yoga/mobility counts strength sessions not classified heavy, on Monday to Friday.
+  - Resource use: one page load reads about 7 activity rows, 7 sleep rows, 97 HRV rows and 7 weight rows. No COROS or Oura calls.
+
 ### Next
 
-- Phase 3: coach rebuild (needs the Master SoK file, pillar targets, and the model decision).
+- Phase 3, next steps (one at a time): the daily brief (data in, labeled text out), coach memory (framework and profile in the database), the coach reading the brief and scorecard with nudges for what is behind, then the structured session summary.
 
 ## Regenerating the session dump
 

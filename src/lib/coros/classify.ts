@@ -8,6 +8,12 @@ import type { CorosActivityDetail } from '@/lib/coros/parse';
 /** Built-in ride sport types (custom sports report no intensity analysis). */
 export const RIDE_SPORT_TYPES = new Set([200, 202, 203, 204, 205]);
 
+/**
+ * Sport types that count as a ride day and ride time: the built-in rides plus
+ * custom sport 9806, which Bill uses for e-MTB rides ("Missoula E MTB").
+ */
+export const RIDE_DAY_SPORT_TYPES = new Set([...RIDE_SPORT_TYPES, 9806]);
+
 /** Anaerobic training effect at or above this means real high-intensity work. */
 export const INTERVAL_ANAEROBIC_TE = 3.0;
 

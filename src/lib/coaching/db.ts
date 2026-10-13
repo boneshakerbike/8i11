@@ -6,6 +6,7 @@
 import { get_client, ensure_schema, get_wellness_cache } from '@/lib/db';
 import { get_coros_days } from '@/lib/coros/data';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
+import { epoch_day_to_date_str } from '@/lib/coaching/day';
 
 // Numeric columns in daily_metrics that get trend computation
 const TREND_METRICS = [
@@ -311,6 +312,16 @@ export async function populate_daily_metrics(
   });
 
   return true;
+}
+
+/** Weight readings between two epoch days, as YYYY-MM-DD dates. */
+export async function get_weights(start_epoch: number, end_epoch: number): Promise<Array<{ date: string; lbs: number }>> {
+  await ensure_schema();
+  const result = await get_client().execute({
+    sql: 'SELECT date, weight_lbs FROM daily_metrics WHERE date >= ? AND date <= ? AND weight_lbs IS NOT NULL ORDER BY date',
+    args: [start_epoch, end_epoch],
+  });
+  return result.rows.map(row => ({ date: epoch_day_to_date_str(Number(row.date)), lbs: Number(row.weight_lbs) }));
 }
 
 /**
