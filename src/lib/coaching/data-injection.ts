@@ -8,7 +8,6 @@ import { get_client, get_wellness_cache, type WellnessSnapshot } from '@/lib/db'
 import { get_back_history, get_trends, get_last_known_manual_metrics, get_weights, type TrendRow } from '@/lib/coaching/db';
 import { shift_date } from '@/lib/coaching/day';
 import { get_coros_activities } from '@/lib/coros/data';
-import { rwgps_activity_date_str, type RwgpsActivity } from '@/lib/ridewithgps';
 import { estimate_cv_age, primary_sleep } from '@/lib/health/oura-derive';
 import { build_daily_brief, last_night_from_oura } from '@/lib/health/daily-brief';
 import { load_scorecard } from '@/lib/health/scorecard-data';
@@ -104,7 +103,6 @@ export async function build_data_injection(
   epoch_day: number,
   manual: ManualInputs,
   oura_live?: Record<string, unknown> | null,
-  activities?: RwgpsActivity[] | null,
   coros_problem?: string | null,
 ): Promise<{ injection: string; metrics: Record<string, unknown> }> {
   const yesterday_str = shift_date(date_str, 1);
@@ -210,17 +208,6 @@ export async function build_data_injection(
       }
     }
     metrics.recovery_status = compute_recovery_status(readiness_val, hrv_val, sleep_period, stress, rhr_val, trends);
-  }
-
-  // Ride with GPS feeds the page's "Yesterday's Activities" card only; the coach reads COROS
-  const rwgps_yesterday = (activities ?? []).filter(a => a.departed_at && rwgps_activity_date_str(a.departed_at) === yesterday_str);
-  if (rwgps_yesterday.length > 0) {
-    metrics.yesterday_activities = rwgps_yesterday.slice(0, 5).map(a => ({
-      id: a.id, name: a.name || 'Activity', type: a.type || '', distance: a.distance, moving_time: a.moving_time,
-      total_elevation_gain: a.total_elevation_gain,
-      average_heartrate: a.average_heartrate, max_heartrate: a.max_heartrate,
-      url: a.url,
-    }));
   }
 
   // Weight comes from COROS (saved by the COROS sync); stale when not from today

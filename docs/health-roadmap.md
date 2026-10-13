@@ -224,9 +224,11 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
 
 - Session review and profile suggestions (2026-10-13): saving a session asks `COACHING_REFINE` for a structured review (summary, facts learned, decisions, developer notes, up to 5 profile edits) through structured outputs (`src/lib/coaching/session-review.ts`). If it does not validate, the session is saved with no summary or review. The review is kept as `coaching_history.summary_json`; the coach's memory of past sessions adds their decisions and facts. Profile edits go to `coach_profile_proposals` and change nothing until Bill accepts each one on the Coach page or `/coach/memory`; an accepted edit saves a new profile version (source `coach:<date>`). An edit whose line was changed since is refused and stays pending. The "first draft from Drive notes" step was dropped: Bill wrote his profile on 2026-10-12.
 
+- Health area layout (Phase 4, 2026-10-13): `/health` is Today, the old Coach page split into `src/components/coach/` (today, metric cards, level selector, session history, yesterday's activities); `/coach` redirects there, and `/coach/memory` and `/coach/metric/*` stay. Yesterday's Activities comes from COROS with the brief's wording (`activity_summary` in `daily-brief.ts`); Ride with GPS no longer feeds the Coach. `/health/trends` charts every metric over 90 days (daily) or a year (weekly averages; `src/lib/health/trends-range.ts`). Nav and home card: Today, Trends, Oura, COROS, Ride with GPS. Today and Trends are owner only; a guest opening `/health` goes to the Oura page.
+
 ### Next
 
-- Phase 4: Health area layout.
+- Nothing left in the plan. Later: COROS workout writing (issue #315).
 
 ## Regenerating the session dump
 

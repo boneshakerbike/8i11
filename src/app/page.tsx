@@ -109,10 +109,10 @@ export default function HomePage() {
       description: 'Oura Ring, Ride with GPS, and COROS training data',
       color: 'green',
       links: [
-        ...(is_admin ? [{ label: 'Coach', href: '/coach' }] : []),
+        ...(is_admin ? [{ label: 'Today', href: '/health' }, { label: 'Trends', href: '/health/trends' }] : []),
         { label: 'Oura', href: '/health/oura' },
-        { label: 'Ride with GPS', href: '/health/ridewithgps' },
         { label: 'COROS', href: '/health/coros' },
+        { label: 'Ride with GPS', href: '/health/ridewithgps' },
       ],
     },
     {

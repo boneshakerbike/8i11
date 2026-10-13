@@ -71,10 +71,10 @@ export default function NavTabs({ theme = 'dark' }: NavTabsProps) {
   ];
   const tools_items: NavItem[] = TOOLS.map((t) => ({ label: t.label, href: t.path }));
   const health_items: NavItem[] = [
-    ...(show_coach ? [{ label: 'Coach', href: '/coach' }] : []),
+    ...(show_coach ? [{ label: 'Today', href: '/health' }, { label: 'Trends', href: '/health/trends' }] : []),
     { label: 'Oura', href: '/health/oura' },
-    { label: 'Ride with GPS', href: '/health/ridewithgps' },
     { label: 'COROS', href: '/health/coros' },
+    { label: 'Ride with GPS', href: '/health/ridewithgps' },
   ];
   const games_items: NavItem[] = [
     { label: 'Frogger', href: '/games/frogger' },
@@ -239,7 +239,7 @@ export default function NavTabs({ theme = 'dark' }: NavTabsProps) {
                         key={it.href}
                         href={it.href}
                         onClick={() => set_menu_open(false)}
-                        className={`block w-full text-left pl-7 pr-4 py-2.5 text-[15px] min-h-[44px] transition-colors ${is_active(it.href) ? (is_light ? 'text-[#c4704b]' : 'text-cyan-400') : (is_light ? 'text-gray-600 hover:text-[#c4704b]' : 'text-gray-300 hover:text-white')}`}
+                        className={`block w-full text-left pl-7 pr-4 py-2.5 text-[15px] min-h-[44px] transition-colors ${(it.href === g.base ? pathname === it.href : is_active(it.href)) ? (is_light ? 'text-[#c4704b]' : 'text-cyan-400') : (is_light ? 'text-gray-600 hover:text-[#c4704b]' : 'text-gray-300 hover:text-white')}`}
                       >
                         {it.label}
                       </Link>
