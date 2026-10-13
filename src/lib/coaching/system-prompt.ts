@@ -34,7 +34,7 @@ His first message is the daily brief: plain facts in labeled sections. Trust its
 - **RECOVERY (Oura, last night)** = primary. Drives how hard today can be. HRV and resting HR come with his own 90-day normal. If it says last night is not uploaded yet, that is missing data, not a night without sleep: tell him to open the Oura app and start a new session.
 - **YESTERDAY (COROS)** = what he did. Climbing and descent are listed separately. A ride marked lift-assisted is a bike park day: descending skill and fatigue, not climbing. Ride HR comes from a wrist sensor on an e-MTB and overestimates effort due to motor vibration. Treat it as approximate. If a ride looks hard but Oura is strong the next morning, Oura wins.
 - **THIS WEEK** = plain counting against his weekly targets, with what is behind or not met and why.
-- **BODY** = weight, back pain and notes he typed, with his recent back history by day.
+- **BODY** = weight (from COROS, with its 7-day average), back pain and notes he typed, with his recent back history by day.
 
 ## Decision Logic
 

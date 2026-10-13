@@ -2,7 +2,7 @@
  * API route: GET /api/coaching/scorecard
  * This week against Bill's targets (src/lib/health/scorecard.ts), from synced
  * COROS activities, Oura sleep, HRV and resting HR (the Oura cache, with
- * coach-session history filling its gaps), and typed weight. Owner only (or
+ * coach-session history filling its gaps), and weight from COROS. Owner only (or
  * the Admin PIN on a preview): it includes weight.
  */
 
