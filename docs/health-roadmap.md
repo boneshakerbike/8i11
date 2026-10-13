@@ -206,9 +206,16 @@ Standing rule: stay inside the free tiers. Every change states what it adds.
   - Tests cover each past bug: weekday, sleep night, nap as the night, descent as climbing.
 - Coach text length: every reply and the session summary stay under 995 characters, because Bill pastes them into the Oura app's AI chat (`src/lib/coaching/share-limit.ts`). The prompt asks for under 900; a longer reply gets one cheap rewrite, then a cut at the last full sentence as a last resort.
 
+- Phase 3, step 3: coach memory (`src/lib/coaching/memory.ts`, page `/coach/memory`).
+  - The framework (`2026-04-02-Longevity-Coaching-Framework.md`) and the biomarker targets (`Biomarker-Target-Crosswalk.md`) are copied from Bill's Google Drive by exact name, using the app's existing Drive connection. The daily job refreshes them (step `memory`), and so does a button. A new version is stored only when a file changed; a missing, empty or oversized file is reported and the last copy kept.
+  - The profile (facts about Bill) is edited on the page; every save is a new version. Until the first save, the coach uses the safety and weight rules it carried before (`DEFAULT_PROFILE`), which should then be removed from the repo.
+  - `coach_documents` table: kind, body, source, created_at. Database only, never this public repo.
+  - The system prompt is the general rules, then the framework ("the framework wins where it differs from what he wants; change position only for new information"), the targets, the profile and the last 7 sessions in full (was 3 cut to 300 characters). It is one cached block per session; the per-turn hint sits after it.
+  - Resource use: about 4 Drive requests a day; the prompt grows by about 7,000 tokens, cached across a session's turns.
+
 ### Next
 
-- Phase 3, next steps (one at a time): coach memory (framework and profile in the database), the coach nudging what is behind using the brief and scorecard, the model change, then the structured session summary.
+- Phase 3, next steps (one at a time): the coach nudging what is behind using the brief and scorecard, plus the model change; then the structured session summary with proposed profile edits.
 
 ## Regenerating the session dump
 

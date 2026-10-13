@@ -218,6 +218,14 @@ export async function name_exists_in_folder(folder_id: string, name: string): Pr
   return data.files.length > 0;
 }
 
+/** The most recently modified text file of Bill's with exactly this name, or null. */
+export async function find_text_file_by_name(name: string): Promise<{ id: string } | null> {
+  const q = `name = ${drive_query_literal(name)} and trashed = false and 'me' in owners`;
+  const params = new URLSearchParams({ q, fields: 'files(id)', orderBy: 'modifiedTime desc', pageSize: '1', spaces: 'drive' });
+  const data = await drive_json<{ files: RawFile[] }>(`${API}/files?${params}`);
+  return data.files[0] ? { id: data.files[0].id } : null;
+}
+
 /** Drive full-text search for a term, limited to text files. Secondary to the in-memory index. */
 export async function full_text_search(term: string, limit = 15): Promise<string[]> {
   const q = `fullText contains ${drive_fulltext_value(term)} and trashed = false and mimeType contains 'text/'`;

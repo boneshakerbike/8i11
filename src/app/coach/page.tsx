@@ -709,6 +709,12 @@ export default function CoachPage() {
           <h1 className="text-xl font-bold">Coach</h1>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500">{dateStr}</span>
+            <Link
+              href="/coach/memory"
+              className="text-sm text-gray-400 hover:text-white border border-zinc-700 px-3 py-1 rounded transition-colors"
+            >
+              Memory
+            </Link>
             <button
               onClick={loadHistory}
               className="text-sm text-gray-400 hover:text-white border border-zinc-700 px-3 py-1 rounded transition-colors"

@@ -1,7 +1,8 @@
 /**
  * API route: POST /api/coaching/chat
  * Multi-turn coaching conversation. Optimized for 1-3 turns.
- * The first message is the daily brief (Oura recovery, COROS training).
+ * The system prompt is the coach's rules plus coach memory (framework, biomarker
+ * targets, profile) and the last 7 sessions; the first message is the daily brief.
  * Every reply stays under 995 characters (src/lib/coaching/share-limit.ts).
  */
 
@@ -9,8 +10,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
-import { COACHING_SYSTEM_PROMPT } from '@/lib/coaching/system-prompt';
 import { get_recent_sessions } from '@/lib/coaching/db';
+import { get_client } from '@/lib/db';
+import { get_coach_memory } from '@/lib/coaching/memory';
+import { SESSION_MEMORY, build_coach_system } from '@/lib/coaching/coach-prompt';
 import { normalizeCoachText } from '@/lib/coaching/normalize-text';
 import { within_share_limit } from '@/lib/coaching/share-limit';
 
@@ -38,18 +41,16 @@ interface ChatMessage {
 
 const MAX_TURNS = 5;
 
-async function build_session_context(): Promise<string | null> {
-  const sessions = await get_recent_sessions(3);
-  if (sessions.length === 0) return null;
-
-  const lines: string[] = ['Recent sessions (for continuity — do not repeat advice already given):'];
-  for (const s of sessions) {
-    const date = new Date(s.date * 86400000).toISOString().split('T')[0];
-    const text = s.advice_summary || s.advice_full;
-    const truncated = text.length > 300 ? text.slice(0, 300) + '...' : text;
-    lines.push(`\n[${date}]: ${truncated}`);
-  }
-  return lines.join('\n');
+/** The coach's rules plus coach memory and recent sessions. Falls back to the rules alone if memory can't be read. */
+async function coach_system(): Promise<string> {
+  const [memory, sessions] = await Promise.all([
+    get_coach_memory(get_client()).catch(err => {
+      console.error('Coach memory unavailable:', err);
+      return { framework: null, crosswalk: null, profile: null };
+    }),
+    get_recent_sessions(SESSION_MEMORY).catch(() => []),
+  ]);
+  return build_coach_system(memory, sessions);
 }
 
 export async function POST(request: NextRequest) {
@@ -84,31 +85,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch session history only on first message
-    const session_context = history.length === 0 ? await build_session_context() : null;
-
-    // Build turn-aware prompt suffix
+    // Turn-aware hint, kept out of the cached block so every turn reuses the cache
     let turn_hint = '';
     if (turn_number === 2) {
-      turn_hint = '\n\n(This is turn 2. The user is clarifying. Be direct and wrap up unless they have more.)';
+      turn_hint = '(This is turn 2. The user is clarifying. Be direct and wrap up unless they have more.)';
     } else if (turn_number >= 3) {
-      turn_hint = '\n\n(This is turn 3+. Wrap up concisely. One last thing if important, then done.)';
+      turn_hint = '(This is turn 3+. Wrap up concisely. One last thing if important, then done.)';
     }
 
+    // Rules + framework + profile + recent sessions: the same for every turn of a session
     const system_blocks: Anthropic.TextBlockParam[] = [
-      {
-        type: 'text',
-        text: COACHING_SYSTEM_PROMPT + turn_hint,
-        cache_control: { type: 'ephemeral' },
-      },
+      { type: 'text', text: await coach_system(), cache_control: { type: 'ephemeral' } },
     ];
-
-    if (session_context) {
-      system_blocks.push({
-        type: 'text',
-        text: session_context,
-      });
-    }
+    if (turn_hint) system_blocks.push({ type: 'text', text: turn_hint });
 
     const messages: ChatMessage[] = [
       ...history,
