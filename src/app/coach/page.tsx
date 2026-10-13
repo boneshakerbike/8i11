@@ -234,10 +234,26 @@ export default function CoachPage() {
   // Cache the initial-load Ride with GPS fetch so startSession() can reuse it
   // instead of issuing a second network call for the same 5-minute window.
   const rwgpsDataRef = useRef<{ activities: RwgpsActivity[]; fetched_at: number } | null>(null);
+  // Bumped after each COROS sync so the weekly box re-reads what was saved
+  const [corosVersion, setCorosVersion] = useState(0);
 
   // Day boundary is Mountain Time regardless of where the client runs
   const dateStr = mt_date_str();
   const epochDay = mt_epoch_day();
+
+  // Pull COROS on open (Bill weighs in and syncs the watch each morning), then
+  // show the saved weight and reload the weekly box. Best effort: on failure
+  // the page keeps what was already saved.
+  useEffect(() => {
+    fetch('/api/coros/sync', { method: 'POST' })
+      .then(res => res.json())
+      .then((data: { weight?: { value: number; stale: boolean } | null }) => {
+        const w = data?.weight;
+        if (w) setMetrics(prev => (prev ? { ...prev, weight: w.value, weight_stale: w.stale } : prev));
+        setCorosVersion(v => v + 1);
+      })
+      .catch(() => {});
+  }, []);
 
   // Hydrate manual-input draft from sessionStorage so refreshes don't lose in-progress entries
   useEffect(() => {
@@ -523,6 +539,8 @@ export default function CoachPage() {
       if (serverMetrics) {
         setMetrics(prev => ({ ...prev, ...serverMetrics }));
       }
+      // Session start refreshed COROS too
+      setCorosVersion(v => v + 1);
 
       // Send to coaching chat
       const chatRes = await fetch('/api/coaching/chat', {
@@ -721,7 +739,7 @@ export default function CoachPage() {
         </div>
 
         <SyncStatus />
-        <WeeklyScorecard />
+        <WeeklyScorecard refresh={corosVersion} />
 
         {/* Past Sessions */}
         {showHistory && (
