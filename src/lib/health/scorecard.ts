@@ -19,7 +19,7 @@ export const TARGETS = {
   intervals_per_week: 1,   // framework Lever 1 (4x4)
   sleep_goal_min: 8 * 60,  // average
   sleep_floor_min: 7 * 60, // every night
-  weight_max_lbs: 195,     // never above
+  weight_max_lbs: 195,     // latest reading must be at or under (an earlier spike is over once back under)
   weight_goal_lbs: 190,    // at least one reading below, each week
 } as const;
 
@@ -253,22 +253,30 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   rows.push(vital_row('hrv', 'HRV', 'ms', input.vitals, today, true));
   rows.push(vital_row('resting_hr', 'Resting HR', 'bpm', input.vitals, today, false));
 
-  const week_weights = input.weights.filter(w => in_week(w.date) && w.lbs != null && w.lbs > 0);
-  const weights = week_weights.map(w => w.lbs as number);
-  const weight_target = `under ${TARGETS.weight_goal_lbs} once, never over ${TARGETS.weight_max_lbs}`;
-  if (weights.length === 0) {
+  // Weight (Bill, 2026-10-13): what counts is being under 195 now, so only the
+  // latest reading is held to the ceiling; an earlier spike is over once he is
+  // back under. Separately, at least one reading under 190 each week.
+  const week_weights = input.weights
+    .filter(w => in_week(w.date) && w.lbs != null && w.lbs > 0)
+    .map(w => ({ date: w.date, lbs: w.lbs as number }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const weight_target = `under ${TARGETS.weight_max_lbs} now, under ${TARGETS.weight_goal_lbs} once a week`;
+  if (week_weights.length === 0) {
     rows.push({ key: 'weight', label: 'Weight', value: '-', target: weight_target, status: 'no_data', note: 'No COROS weight this week' });
   } else {
-    const low = Math.min(...weights);
-    const high = Math.max(...weights);
-    const status: ScoreStatus = high > TARGETS.weight_max_lbs ? 'missed'
+    const latest = week_weights[week_weights.length - 1];
+    const low = Math.min(...week_weights.map(w => w.lbs));
+    const when = latest.date === today ? 'today' : day_names([latest.date]);
+    const over = latest.lbs > TARGETS.weight_max_lbs;
+    const status: ScoreStatus = over ? 'missed'
       : low < TARGETS.weight_goal_lbs ? 'done'
       : count_status(0, 1, days_done);
     rows.push({
-      key: 'weight', label: 'Weight', value: weights.length === 1 ? `${low} lb` : `${low}-${high} lb`, target: weight_target, status,
-      // Name the day, so an old reading does not read as today's weight
-      reason: status === 'missed' ? `${day_names([week_weights.find(w => w.lbs === high)!.date])} ${high} lb was over ${TARGETS.weight_max_lbs}`
-        : status === 'behind' ? `not under ${TARGETS.weight_goal_lbs} yet` : undefined,
+      key: 'weight', label: 'Weight',
+      value: week_weights.length === 1 || low === latest.lbs ? `${latest.lbs} lb` : `${latest.lbs} lb (week low ${low})`,
+      target: weight_target, status,
+      reason: over ? `${latest.lbs} lb ${when} is over ${TARGETS.weight_max_lbs}`
+        : status === 'done' ? undefined : `not under ${TARGETS.weight_goal_lbs} yet this week`,
     });
   }
 
