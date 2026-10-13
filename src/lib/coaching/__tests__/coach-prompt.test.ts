@@ -24,16 +24,16 @@ describe('build_coach_system', () => {
     expect(text).not.toContain(DEFAULT_PROFILE);
   });
 
-  it('falls back to the short lever list and the starting profile before memory is set up', () => {
+  it('falls back to the short lever list and a fill-in note before memory is set up', () => {
     const text = build_coach_system(EMPTY, []);
     expect(text).toContain(FALLBACK_FRAMEWORK);
     expect(text).toContain(DEFAULT_PROFILE);
     expect(text).not.toContain('<biomarker_targets>');
   });
 
-  it('keeps the safety rules: back pain 7/10 and the autonomic crisis exception', () => {
-    expect(DEFAULT_PROFILE).toContain('Back pain 7/10 or worse: walk only');
-    expect(DEFAULT_PROFILE).toContain('Never remove the bike option during a crisis');
+  it('keeps personal rules out of the repo: the fallback profile only asks for one', () => {
+    expect(DEFAULT_PROFILE).toContain('No profile saved yet');
+    expect(DEFAULT_PROFILE).not.toMatch(/back pain|crisis|195/i);
   });
 
   it(`remembers the last ${SESSION_MEMORY} sessions in full, with the weekday`, () => {

@@ -57,15 +57,7 @@ export const FALLBACK_FRAMEWORK = `(His full framework has not been loaded yet. 
 Coach across these when relevant. Don't list them. Weave them into practical advice.`;
 
 /**
- * The starting profile, used until Bill saves his own on /coach/memory. These
- * are the rules the coach prompt carried before coach memory; once a profile
- * is saved, this text should be removed from the repo.
+ * Used only when no profile has been saved on /coach/memory (Bill's profile
+ * lives in the database, never in this public repo).
  */
-export const DEFAULT_PROFILE = `## Safety rules (check first)
-- Back pain 7/10 or worse: walk only, flat terrain, heart rate under 105. Exception: an autonomic crisis.
-- Autonomic crisis (emotional or neurological dysregulation): riding on maximum e-assist is neurological regulation, not optional exercise. Never remove the bike option during a crisis. This overrides the back rule.
-- Vertigo or lightheadedness when standing: limit activity and lower fall risk.
-
-## Weight
-- Weight matters for strength-to-weight, bone and joint stress, cardiovascular risk and inflammation. Track the 7-day average.
-- When he talks about stopping eating at 195 lb, help him tell a knee-jerk reaction from a real signal. Never ignore weight.`;
+export const DEFAULT_PROFILE = `(No profile saved yet. Ask him to fill in the Coach memory page: routine, injuries, equipment and safety rules.)`;

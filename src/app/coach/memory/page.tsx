@@ -141,10 +141,10 @@ export default function CoachMemoryPage() {
         <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
           <div className="flex justify-between items-baseline gap-2">
             <h2 className="text-sm font-semibold text-white">Your profile</h2>
-            {p && <span className="text-xs text-gray-500">{p.is_default ? 'Starting text, not saved yet' : `Saved ${when(p.updated_at)} · ${p.versions} version${p.versions === 1 ? '' : 's'}`}</span>}
+            {p && <span className="text-xs text-gray-500">{p.is_default ? 'Not saved yet' : `Saved ${when(p.updated_at)} · ${p.versions} version${p.versions === 1 ? '' : 's'}`}</span>}
           </div>
           <p className="text-xs text-gray-500">
-            Facts about you the coach should always know: routine, injuries, equipment, safety rules. {p?.is_default && 'This starting text is the rules the coach already followed. Edit it and save to make it yours.'}
+            Facts about you the coach should always know: routine, injuries, equipment, safety rules. {p?.is_default && 'Nothing saved yet: write the facts and save.'}
           </p>
           <textarea
             value={profile}

@@ -10,7 +10,6 @@ import { getToken } from 'next-auth/jwt'
 import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner'
 import { get_client, get_google_tokens } from '@/lib/db'
 import { DRIVE_DOCUMENTS, MAX_PROFILE_CHARS, get_coach_memory } from '@/lib/coaching/memory'
-import { DEFAULT_PROFILE } from '@/lib/coaching/system-prompt'
 import { drive_view_url } from '@/lib/google_drive'
 
 export async function GET(request: NextRequest) {
@@ -39,7 +38,7 @@ export async function GET(request: NextRequest) {
       drive_connected: google_tokens != null,
       documents,
       profile: {
-        body: profile?.body ?? DEFAULT_PROFILE,
+        body: profile?.body ?? '',
         is_default: profile == null,
         versions: profile?.versions ?? 0,
         updated_at: profile?.created_at ?? null,
