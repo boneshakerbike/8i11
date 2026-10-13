@@ -205,3 +205,39 @@ describe('scorecard_summary', () => {
     expect(scorecard_summary(rows.slice(0, 2)).level).toBe('behind');
   });
 });
+
+describe('reasons in the one-line summary', () => {
+  it('says why weight is not met, so it does not read as a missing weight', () => {
+    const rows = card(day(0), { weights: [{ date: day(0), lbs: 197.1 }] }).rows;
+    expect(row(rows, 'weight')).toMatchObject({ status: 'missed', reason: '197.1 lb is over 195' });
+    expect(scorecard_summary(rows).missed).toEqual(['Weight (197.1 lb is over 195)']);
+  });
+
+  it('names the days a daily target was skipped', () => {
+    const rides = [act(day(0), 204, 60), act(day(3), 204, 60)];
+    expect(row(card(day(3), { activities: rides }).rows, 'ride_days').reason).toBe('no ride Tue, Wed');
+    expect(row(card(day(3), { activities: [mobility(day(0))] }).rows, 'mobility').reason).toBe('none Tue, Wed');
+  });
+
+  it('gives the pace for counts and ride time, and nothing when on track', () => {
+    const rows = card(day(3)).rows;
+    expect(row(rows, 'heavy').reason).toBe('pace is 1 by now');
+    expect(row(rows, 'ride_time').reason).toBe('pace is 3h 00m by now');
+    expect(row(rows, 'intervals').reason).toBeUndefined();
+    expect(row(card(day(4)).rows, 'intervals').reason).toBe('none yet');
+    expect(row(card(day(5)).rows, 'heavy').reason).toBe('too few days left for 3');
+  });
+
+  it('says which sleep rule and which direction for HRV and resting HR', () => {
+    const sleep = [{ date: day(0), total_min: 480 }, { date: day(1), total_min: 400 }];
+    expect(row(card(day(1), { sleep }).rows, 'sleep').reason).toBe('average under 8h, 1 night under 7h');
+    const today = day(3);
+    const vitals = [
+      ...Array.from({ length: 90 }, (_, i) => ({ date: shift_date(today, 7 + i), hrv: i % 2 ? 40 : 50, resting_hr: i % 2 ? 48 : 52 })),
+      ...Array.from({ length: 7 }, (_, i) => ({ date: shift_date(today, i), hrv: 38, resting_hr: 54 })),
+    ];
+    const rows = card(today, { vitals }).rows;
+    expect(row(rows, 'hrv').reason).toBe('below your normal');
+    expect(row(rows, 'resting_hr').reason).toBe('above your normal');
+  });
+});
