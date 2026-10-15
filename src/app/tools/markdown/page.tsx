@@ -107,6 +107,8 @@ export default function MarkdownConverterPage() {
             return `[${children}](${href})`;
           }
           case 'button':
+            // Confluence wraps @mentions in a profile-card button, keep the name
+            return element.querySelector('[data-mention-id]') ? children : '';
           case 'svg':
           case 'input': return '';
           case 'br': return '\n';
