@@ -5,6 +5,7 @@ import PredictionForm from './prediction_form';
 import ResultsReveal from './results_reveal';
 import ResultsTable from './results_table';
 import GroupPicks from './group_picks';
+import WeekendStandings from './weekend_standings';
 
 interface GroupPick {
   player_name: string;
@@ -103,6 +104,8 @@ export default function WeekendView({
           {race.circuit_name} &middot; {race.locality}, {race.country} &middot; {format_date(race.race_date)}
         </div>
       </div>
+
+      <WeekendStandings sessions={sessions} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {sessions.map(session => {
