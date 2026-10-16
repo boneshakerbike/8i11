@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import NavTabs from '@/components/nav_tabs';
 import { build_issue_url } from '@/lib/github_issue';
 import { knowledge_filename } from '@/lib/knowledge_doc';
+import { count_words } from '@/lib/crunch';
 
 interface TextNote {
   id: string;
@@ -48,8 +49,11 @@ export default function TextCleanerPage() {
   const [input, set_input] = useState('');
   const [cleaned, set_cleaned] = useState('');
   const [story, set_story] = useState('');
-  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
-  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | null>(null);
+  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
+  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | null>(null);
+  // Word count of the input a Crunch ran on, so the output header can show how far it shrank.
+  // Not persisted: the input isn't either, so a restored draft just hides the count.
+  const [crunch_source_words, set_crunch_source_words] = useState<number | null>(null);
   const [error, set_error] = useState<string | null>(null);
   const [copy_status, set_copy_status] = useState<string | null>(null);
   const [clean_usage, set_clean_usage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
@@ -142,7 +146,7 @@ export default function TextCleanerPage() {
       if (saved_story)   set_story(saved_story);
       if (saved_cleaned) {
         set_output_mode(
-          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge' || saved_output_mode === 'first_person'
+          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge' || saved_output_mode === 'first_person' || saved_output_mode === 'crunch'
             ? saved_output_mode
             : 'clean'
         );
@@ -196,14 +200,15 @@ export default function TextCleanerPage() {
     return `Couldn't ${action} — try again.`;
   };
 
-  const rewrite_labels: Record<'clean' | 'clarify' | 'knowledge' | 'first_person', string> = {
+  const rewrite_labels: Record<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch', string> = {
     clean: 'clean text',
     clarify: 'clarify text',
     knowledge: 'build knowledge doc',
     first_person: 'convert to first person',
+    crunch: 'crunch text',
   };
 
-  const run_rewrite = async (op: 'clean' | 'clarify' | 'knowledge' | 'first_person') => {
+  const run_rewrite = async (op: 'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch') => {
     if (!input.trim()) return;
 
     set_loading_action(op);
@@ -225,6 +230,7 @@ export default function TextCleanerPage() {
         set_error('The document hit the output limit and stops early. Try a shorter source.');
       }
       set_output_mode(op);
+      set_crunch_source_words(op === 'crunch' ? count_words(input) : null);
       set_story('');
       set_story_usage(null);
       set_substack('');
@@ -241,6 +247,7 @@ export default function TextCleanerPage() {
   const clarify = () => run_rewrite('clarify');
   const knowledge_doc = () => run_rewrite('knowledge');
   const first_person = () => run_rewrite('first_person');
+  const crunch = () => run_rewrite('crunch');
 
   // Hand the markdown to the browser as a file. Object URL rather than a data:
   // URL so a long document isn't capped by the URL length limit.
@@ -382,6 +389,7 @@ export default function TextCleanerPage() {
     set_substack_usage(null);
     set_substack_warnings([]);
     set_output_mode(null);
+    set_crunch_source_words(null);
   };
 
   const save_note = async () => {
@@ -444,6 +452,7 @@ export default function TextCleanerPage() {
 
   const handle_note_story = (note: TextNote) => {
     set_cleaned(note.content);
+    set_crunch_source_words(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Use setTimeout so the cleaned state is set before triggering story generation
     setTimeout(() => {
@@ -704,7 +713,7 @@ export default function TextCleanerPage() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex flex-col sm:flex-row sm:justify-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:justify-center gap-3">
             <div className="flex gap-3 sm:contents">
               <button
                 onClick={clean}
@@ -739,6 +748,16 @@ export default function TextCleanerPage() {
                 {loading_action === 'first_person' ? 'Converting...' : 'First Person'}
               </button>
             </div>
+            <div className="flex gap-3 sm:contents">
+              <button
+                onClick={crunch}
+                disabled={!!loading_action || !input.trim()}
+                title="Cut this to about half its length, keeping what matters"
+                className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
+              >
+                {loading_action === 'crunch' ? 'Crunching...' : 'Crunch'}
+              </button>
+            </div>
             <button
               onClick={clear_all}
               className="w-full sm:w-auto px-4 py-2.5 sm:py-3 bg-[#333] sm:bg-white/10 hover:bg-red-400/20 rounded-lg border border-[#555] sm:border-white/20 text-gray-300 text-sm transition-all"
@@ -765,8 +784,13 @@ export default function TextCleanerPage() {
               <div className="bg-white/5 px-4 py-2 border-b border-white/10 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium text-gray-300">
-                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : output_mode === 'first_person' ? 'First Person' : 'Cleaned'}
+                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : output_mode === 'first_person' ? 'First Person' : output_mode === 'crunch' ? 'Crunched' : 'Cleaned'}
                   </h3>
+                  {output_mode === 'crunch' && crunch_source_words ? (
+                    <span className="text-xs text-gray-400">
+                      {count_words(cleaned)} of {crunch_source_words} words ({Math.round(count_words(cleaned) / crunch_source_words * 100)}%)
+                    </span>
+                  ) : null}
                   {clean_usage && (
                     <span className="text-xs text-gray-400">
                       {clean_usage.input_tokens + clean_usage.output_tokens} tokens
