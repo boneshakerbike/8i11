@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import NavTabs from '@/components/nav_tabs';
+import ClaudeStatus from '@/components/claude_status';
 import { TOOLS } from '@/lib/tools';
 import { SECTION_ACCENTS } from '@/lib/sections';
 
@@ -150,6 +151,9 @@ export default function HomePage() {
 
         <div className="text-center mb-6 mt-2 sm:mb-12 sm:mt-4">
           <p className="text-gray-400 text-sm">Creative tools and games by William Martin</p>
+          <div className="mt-2">
+            <ClaudeStatus />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-16">
