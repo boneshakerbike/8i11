@@ -8,11 +8,12 @@
  */
 
 import { useEffect, useState } from 'react'
-import { scorecard_summary, type Scorecard, type ScoreStatus, type ScorecardSummary } from '@/lib/health/scorecard'
+import { scorecard_summary, summary_text, type Scorecard, type ScoreStatus, type ScorecardSummary } from '@/lib/health/scorecard'
 
 const STATUS: Record<ScoreStatus, { label: string; className: string }> = {
   done: { label: 'Done', className: 'text-green-300 bg-green-950 border-green-800' },
   on_track: { label: 'On track', className: 'text-emerald-300 bg-emerald-950/60 border-emerald-900' },
+  to_do: { label: 'To do', className: 'text-gray-300 bg-zinc-800 border-zinc-600' },
   behind: { label: 'Behind', className: 'text-amber-300 bg-amber-950 border-amber-800' },
   missed: { label: 'Not met', className: 'text-red-300 bg-red-950 border-red-800' },
   no_data: { label: 'No data', className: 'text-gray-400 bg-zinc-800 border-zinc-700' },
@@ -72,7 +73,7 @@ export default function WeeklyScorecard({ refresh = 0 }: { refresh?: number }) {
         <div className="flex justify-between items-center gap-2">
           <span className="text-sm">
             <span className="font-semibold text-white">This week</span>
-            <span className={`ml-2 ${LEVEL[summary.level]}`}>{summary.ok} of {summary.judged} on track</span>
+            <span className={`ml-2 ${LEVEL[summary.level]}`}>{summary_text(summary)}</span>
           </span>
           <span className={`text-xs text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
         </div>
@@ -102,7 +103,7 @@ export default function WeeklyScorecard({ refresh = 0 }: { refresh?: number }) {
             ))}
           </ul>
           <p className="px-4 py-2 border-t border-zinc-800 text-xs text-gray-500">
-            Monday to Sunday. On track means at the pace needed through yesterday, so today never counts against you.
+            Monday to Sunday. On track means at the pace needed through yesterday, so today never counts against you. To do means nothing logged yet and nothing due yet.
           </p>
         </>
       )}
