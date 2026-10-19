@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fill_gaps, scorecard_summary, weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
+import { fill_gaps, scorecard_summary, summary_text, weekly_scorecard, week_start, type ScorecardActivity, type ScorecardInput, type ScoreRow } from '@/lib/health/scorecard';
 import { shift_date } from '@/lib/coaching/day';
 
 // Week of Monday 2026-10-12 to Sunday 2026-10-18. Made-up values.
@@ -86,14 +86,27 @@ describe('weekly_scorecard: training', () => {
     // Saturday: 1 done leaves 2 for 2 days, still possible; none done is not
     expect(row(card(day(5), { activities: [heavy(day(0))] }).rows, 'heavy').status).toBe('behind');
     expect(row(card(day(5)).rows, 'heavy').status).toBe('missed');
-    expect(row(card(day(0)).rows, 'heavy').status).toBe('on_track');
+    expect(row(card(day(0)).rows, 'heavy').status).toBe('to_do');
   });
 
   it('counts an interval session from COROS intensity, behind from Friday without one', () => {
-    expect(row(card(thursday).rows, 'intervals')).toMatchObject({ value: '0 of 1', status: 'on_track' });
+    expect(row(card(thursday).rows, 'intervals')).toMatchObject({ value: '0 of 1', status: 'to_do' });
     expect(row(card(day(4)).rows, 'intervals').status).toBe('behind');
     const ride = act(day(1), 204, 75, { anaerobic_te: 3.4, training_focus: 'VO2 Max' });
     expect(row(card(day(4), { activities: [ride] }).rows, 'intervals')).toMatchObject({ value: '1 of 1', status: 'done' });
+  });
+
+  it('says "to do", not "on track", when nothing is logged and nothing is due yet (Bill, 2026-10-19)', () => {
+    const monday = card(day(0)).rows;
+    for (const key of ['ride_time', 'ride_days', 'mobility', 'heavy', 'intervals', 'weight'] as const) {
+      expect(row(monday, key).status, key).toBe('to_do');
+    }
+    // Once something is logged, the same pace is on track
+    const started = card(day(1), { activities: [act(day(0), 204, 90), mobility(day(0))] }).rows;
+    expect(row(started, 'ride_days')).toMatchObject({ value: '1 of 2', status: 'on_track' });
+    expect(row(started, 'mobility').status).toBe('on_track');
+    // Falling behind pace still says behind
+    expect(row(card(day(1)).rows, 'ride_time').status).toBe('behind');
   });
 });
 
@@ -108,7 +121,7 @@ describe('weekly_scorecard: sleep and weight', () => {
   });
 
   it('reports no sleep data instead of guessing', () => {
-    expect(row(card(day(2)).rows, 'sleep').status).toBe('no_data');
+    expect(row(card(day(2)).rows, 'sleep')).toMatchObject({ status: 'no_data', note: 'No nights synced yet this week' });
   });
 
   it('is done after one reading under 190, and not met only while the latest reading is over 195', () => {
@@ -125,7 +138,7 @@ describe('weekly_scorecard: sleep and weight', () => {
     // Bill's week of 2026-10-12: 197.1 Monday, 192.2 Tuesday
     const weights = [{ date: day(0), lbs: 197.1 }, { date: day(1), lbs: 192.2 }];
     expect(row(card(day(1), { weights }).rows, 'weight'))
-      .toMatchObject({ value: '192.2 lb', status: 'on_track', reason: 'not under 190 yet this week' });
+      .toMatchObject({ value: '192.2 lb', status: 'to_do', reason: 'not under 190 yet this week' });
     expect(row(card(day(2), { weights: [...weights, { date: day(2), lbs: 189.8 }] }).rows, 'weight'))
       .toMatchObject({ value: '189.8 lb', status: 'done', reason: undefined });
     // A later reading over 195 counts again, even after one under 190
@@ -135,10 +148,10 @@ describe('weekly_scorecard: sleep and weight', () => {
 
   it('gives the week until Friday to get under 190', () => {
     const weights = [{ date: day(0), lbs: 192 }];
-    expect(row(card(day(3), { weights }).rows, 'weight').status).toBe('on_track');
+    expect(row(card(day(3), { weights }).rows, 'weight').status).toBe('to_do');
     expect(row(card(day(4), { weights }).rows, 'weight').status).toBe('behind');
     // No weigh-in at all is still no reading under 190
-    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'on_track', value: '-', note: 'No COROS weight this week' });
+    expect(row(card(day(3)).rows, 'weight')).toMatchObject({ status: 'to_do', value: '-', note: 'No COROS weight this week' });
     expect(row(card(day(4)).rows, 'weight')).toMatchObject({ status: 'behind', reason: 'not under 190 yet this week' });
   });
 });
@@ -214,13 +227,21 @@ describe('scorecard_summary', () => {
 
   it('counts done and on track as fine, and leaves rows without data out', () => {
     const rows = [r('Ride time', 'on_track'), r('Ride days', 'done'), r('Sleep', 'no_data')];
-    expect(scorecard_summary(rows)).toEqual({ ok: 2, judged: 2, behind: [], missed: [], level: 'good' });
+    expect(scorecard_summary(rows)).toEqual({ ok: 2, judged: 2, to_do: 0, behind: [], missed: [], level: 'good' });
   });
 
   it('names what needs attention, missed first in level', () => {
     const rows = [r('Ride time', 'on_track'), r('Heavy strength', 'behind'), r('Weight', 'missed')];
-    expect(scorecard_summary(rows)).toEqual({ ok: 1, judged: 3, behind: ['Heavy strength'], missed: ['Weight'], level: 'missed' });
+    expect(scorecard_summary(rows)).toEqual({ ok: 1, judged: 3, to_do: 0, behind: ['Heavy strength'], missed: ['Weight'], level: 'missed' });
     expect(scorecard_summary(rows.slice(0, 2)).level).toBe('behind');
+  });
+
+  it('keeps to-do rows out of "on track" in the header', () => {
+    const rows = [r('HRV', 'on_track'), r('Resting HR', 'on_track'), r('Ride time', 'to_do'), r('Heavy strength', 'to_do'), r('Sleep', 'no_data')];
+    expect(scorecard_summary(rows)).toMatchObject({ ok: 2, judged: 2, to_do: 2, level: 'good' });
+    expect(summary_text(scorecard_summary(rows))).toBe('2 of 2 on track, 2 to do');
+    expect(summary_text(scorecard_summary(rows.slice(2, 4)))).toBe('2 to do');
+    expect(summary_text(scorecard_summary(rows.slice(0, 2)))).toBe('2 of 2 on track');
   });
 });
 

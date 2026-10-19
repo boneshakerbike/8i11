@@ -15,7 +15,7 @@
 import { shift_date } from '@/lib/coaching/day';
 import { STRENGTH_SPORT_TYPE, is_interval_session, strength_kind } from '@/lib/coros/classify';
 import type { StoredCorosActivity } from '@/lib/coros/data';
-import { scorecard_summary, type Scorecard, type ScoreRow, type ScoreStatus } from '@/lib/health/scorecard';
+import { scorecard_summary, summary_text, type Scorecard, type ScoreRow, type ScoreStatus } from '@/lib/health/scorecard';
 import { primary_sleep } from '@/lib/health/oura-derive';
 
 /** Last night's Oura numbers, from the night's main sleep period (never a nap). */
@@ -116,7 +116,7 @@ const feet = (m: number) => `${Math.round(m * 3.281).toLocaleString('en-US')} ft
 const miles = (m: number) => `${(m / 1609.34).toFixed(1)} mi`;
 
 const STATUS: Record<ScoreStatus, string> = {
-  done: 'done', on_track: 'on track', behind: 'behind', missed: 'not met', no_data: 'no data',
+  done: 'done', on_track: 'on track', to_do: 'to do', behind: 'behind', missed: 'not met', no_data: 'no data',
 };
 
 /** True when a ride's descent dwarfs its climbing: lifts or shuttles did the climbing. */
@@ -188,7 +188,7 @@ export function must_mention(card: Scorecard, today: string): ScoreRow[] {
   // Weight over 195 right now is named any day: getting back under comes first
   if (day_of_week(card, today) < NUDGE_FROM_DAY) return card.rows.filter(r => r.key === 'weight' && r.status === 'missed');
   return card.rows.filter(r => NUDGE_KEYS.includes(r.key) && (
-    r.status === 'behind' || r.status === 'missed' || (UNTIL_DONE_KEYS.includes(r.key) && r.status === 'on_track')
+    r.status === 'behind' || r.status === 'missed' || (UNTIL_DONE_KEYS.includes(r.key) && (r.status === 'on_track' || r.status === 'to_do'))
   ));
 }
 
@@ -246,7 +246,7 @@ export function build_daily_brief(input: BriefInput): string {
   const card = input.scorecard;
   const summary = scorecard_summary(card.rows);
   lines.push('', `THIS WEEK (${long_date(card.week_start)} to ${long_date(card.week_end)}; day ${day_of_week(card, today)} of 7)`);
-  lines.push(`${summary.ok} of ${summary.judged} on track`);
+  lines.push(summary_text(summary));
   if (summary.missed.length) lines.push(`Not met: ${summary.missed.join('; ')}`);
   if (summary.behind.length) lines.push(`Behind: ${summary.behind.join('; ')}`);
   for (const r of card.rows) lines.push(row_line(r));
@@ -255,7 +255,7 @@ export function build_daily_brief(input: BriefInput): string {
   if (nudges.length > 0) {
     lines.push('', 'MUST MENTION (weekly to-dos from his framework, not done yet; name each one in your first reply)');
     for (const r of nudges) {
-      const why = r.reason ?? (r.status === 'on_track' ? 'still to do this week' : '');
+      const why = r.reason ?? (r.status === 'on_track' || r.status === 'to_do' ? 'still to do this week' : '');
       lines.push(`- ${r.label}${r.status === 'missed' ? ' (not met)' : ''}: ${r.value}${why ? `; ${why}` : ''}`);
     }
   }

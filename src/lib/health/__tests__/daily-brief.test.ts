@@ -128,6 +128,13 @@ describe('build_daily_brief: this week and body', () => {
     expect(text).toMatch(/^- Heavy strength: 0 of 3 \(target 3 a week\): /m);
   });
 
+  it('says "to do" for rows with nothing logged and nothing due yet', () => {
+    const text = brief(); // Tuesday: heavy strength and intervals are not due yet
+    expect(text).toContain('- Heavy strength: 0 of 3 (target 3 a week): to do');
+    expect(text).toContain('- Intervals: 0 of 1 (target 1 a week (4x4)): to do');
+    expect(text).toMatch(/^0 of 4 on track, 2 to do$/m);
+  });
+
   it('gives today\'s weight with the 7-day average, or the last reading', () => {
     expect(brief({ weight: { today: 196.2, last_7: [{ date: YESTERDAY, lbs: 197.2 }, { date: TODAY, lbs: 196.2 }] } }))
       .toContain('Weight 196.2 lb today. 7-day avg 196.7 lb over 2 readings');

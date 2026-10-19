@@ -35,7 +35,8 @@ export const BASELINE_DAYS = 90;
  */
 export const OFF_NORMAL_SD = 0.5;
 
-export type ScoreStatus = 'done' | 'on_track' | 'behind' | 'missed' | 'no_data';
+/** to_do: nothing logged yet and nothing due yet (Bill, 2026-10-19: a green "on track" for 0 of 3 read as credit for nothing). */
+export type ScoreStatus = 'done' | 'on_track' | 'to_do' | 'behind' | 'missed' | 'no_data';
 
 export interface ScoreRow {
   key: 'ride_time' | 'ride_days' | 'mobility' | 'heavy' | 'intervals' | 'sleep' | 'hrv' | 'resting_hr' | 'weight';
@@ -128,6 +129,10 @@ function count_status(count: number, target: number, days_done: number): ScoreSt
   return count >= pace(target, days_done) ? 'on_track' : 'behind';
 }
 
+/** On pace with nothing logged yet is "to do", not "on track". */
+const started = (status: ScoreStatus, count: number): ScoreStatus =>
+  status === 'on_track' && count === 0 ? 'to_do' : status;
+
 /** How many of a weekly count should be done after `days_done` finished days. */
 const pace = (target: number, days_done: number) => Math.round((target * days_done) / 7);
 
@@ -198,7 +203,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   const rows: ScoreRow[] = [];
 
   const ride_pace = (TARGETS.ride_min * days_done) / 7;
-  const ride_status: ScoreStatus = ride_min >= TARGETS.ride_min ? 'done' : ride_min >= ride_pace ? 'on_track' : 'behind';
+  const ride_status = started(ride_min >= TARGETS.ride_min ? 'done' : ride_min >= ride_pace ? 'on_track' : 'behind', ride_min);
   rows.push({
     key: 'ride_time', label: 'Ride time', value: hm(ride_min), target: hm(TARGETS.ride_min), status: ride_status,
     reason: ride_status === 'behind' ? `pace is ${hm(ride_pace)} by now` : undefined,
@@ -207,7 +212,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   const no_ride = days.filter(d => d < today && !ride_days.has(d));
   rows.push({
     key: 'ride_days', label: 'Ride days', value: `${ride_days.size} of ${days.length}`, target: 'every day',
-    status: every_day_status(ride_days, days, today, 7),
+    status: started(every_day_status(ride_days, days, today, 7), ride_days.size),
     reason: no_ride.length > 0 ? `no ride ${day_names(no_ride)}` : undefined,
   });
 
@@ -215,11 +220,11 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   const no_mobility = work_days.filter(d => d < today && !mobility_done.has(d));
   rows.push({
     key: 'mobility', label: 'Yoga / mobility', value: `${mobility_done.size} of ${work_days.length} work days`, target: 'every work day',
-    status: every_day_status(mobility_done, work_days, today, 5),
+    status: started(every_day_status(mobility_done, work_days, today, 5), mobility_done.size),
     reason: no_mobility.length > 0 ? `none ${day_names(no_mobility)}` : undefined,
   });
 
-  const heavy_status = count_status(heavy.length, TARGETS.heavy_per_week, days_done);
+  const heavy_status = started(count_status(heavy.length, TARGETS.heavy_per_week, days_done), heavy.length);
   rows.push({
     key: 'heavy', label: 'Heavy strength', value: `${heavy.length} of ${TARGETS.heavy_per_week}`, target: `${TARGETS.heavy_per_week} a week`,
     status: heavy_status,
@@ -228,7 +233,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
       : heavy_status === 'missed' ? `too few days left for ${TARGETS.heavy_per_week}` : undefined,
   });
 
-  const interval_status = count_status(intervals.length, TARGETS.intervals_per_week, days_done);
+  const interval_status = started(count_status(intervals.length, TARGETS.intervals_per_week, days_done), intervals.length);
   rows.push({
     key: 'intervals', label: 'Intervals', value: `${intervals.length} of ${TARGETS.intervals_per_week}`, target: `${TARGETS.intervals_per_week} a week (4x4)`,
     status: interval_status,
@@ -237,7 +242,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
 
   const nights = input.sleep.filter(s => in_week(s.date) && s.total_min != null && s.total_min > 0).map(s => s.total_min as number);
   if (nights.length === 0) {
-    rows.push({ key: 'sleep', label: 'Sleep', value: '-', target: '8h avg, 7h minimum', status: 'no_data' });
+    rows.push({ key: 'sleep', label: 'Sleep', value: '-', target: '8h avg, 7h minimum', status: 'no_data', note: 'No nights synced yet this week' });
   } else {
     const avg = mean(nights);
     const short = nights.filter(n => n < TARGETS.sleep_floor_min).length;
@@ -264,7 +269,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
   if (week_weights.length === 0) {
     // No weigh-in still means no reading under 190, so it is nudged like one
     rows.push({
-      key: 'weight', label: 'Weight', value: '-', target: weight_target, status: count_status(0, 1, days_done),
+      key: 'weight', label: 'Weight', value: '-', target: weight_target, status: started(count_status(0, 1, days_done), 0),
       reason: `not under ${TARGETS.weight_goal_lbs} yet this week`, note: 'No COROS weight this week',
     });
   } else {
@@ -274,7 +279,7 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
     const over = latest.lbs > TARGETS.weight_max_lbs;
     const status: ScoreStatus = over ? 'missed'
       : low < TARGETS.weight_goal_lbs ? 'done'
-      : count_status(0, 1, days_done);
+      : started(count_status(0, 1, days_done), 0);
     rows.push({
       key: 'weight', label: 'Weight',
       value: week_weights.length === 1 || low === latest.lbs ? `${latest.lbs} lb` : `${latest.lbs} lb (week low ${low})`,
@@ -292,7 +297,8 @@ export function weekly_scorecard(input: ScorecardInput): Scorecard {
 
 export interface ScorecardSummary {
   ok: number;       // rows done or on track
-  judged: number;   // rows with data to judge
+  judged: number;   // rows with something to judge (not to do, not no data)
+  to_do: number;    // rows with nothing logged and nothing due yet
   behind: string[]; // rows behind, as "Label (reason)"
   missed: string[]; // rows not met, as "Label (reason)"
   level: 'good' | 'behind' | 'missed';
@@ -306,9 +312,18 @@ export function scorecard_summary(rows: ScoreRow[]): ScorecardSummary {
   const missed = labels('missed');
   return {
     ok: rows.filter(r => r.status === 'done' || r.status === 'on_track').length,
-    judged: rows.filter(r => r.status !== 'no_data').length,
+    judged: rows.filter(r => r.status !== 'no_data' && r.status !== 'to_do').length,
+    to_do: rows.filter(r => r.status === 'to_do').length,
     behind,
     missed,
     level: missed.length > 0 ? 'missed' : behind.length > 0 ? 'behind' : 'good',
   };
+}
+
+/** The header line, e.g. "2 of 2 on track, 6 to do"; just "6 to do" when nothing is judged yet. */
+export function summary_text(s: ScorecardSummary): string {
+  return [
+    s.judged > 0 || s.to_do === 0 ? `${s.ok} of ${s.judged} on track` : '',
+    s.to_do > 0 ? `${s.to_do} to do` : '',
+  ].filter(Boolean).join(', ');
 }
