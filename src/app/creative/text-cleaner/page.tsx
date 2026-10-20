@@ -65,7 +65,6 @@ export default function TextCleanerPage() {
   // What a Fact Check looked at. Not persisted either: a restored draft keeps only the fixed text.
   const [fact_findings, set_fact_findings] = useState<FactFinding[] | null>(null);
   const [fact_searches, set_fact_searches] = useState<number | null>(null);
-  const [fact_check_allowed, set_fact_check_allowed] = useState(false);
   const [error, set_error] = useState<string | null>(null);
   const [copy_status, set_copy_status] = useState<string | null>(null);
   const [clean_usage, set_clean_usage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
@@ -104,14 +103,6 @@ export default function TextCleanerPage() {
       .then(read_json)
       .then(data => { if (data && typeof data.owner === 'boolean') set_drive_status(data as unknown as DriveStatus); })
       .catch(() => { /* no Drive button */ });
-  }, []);
-
-  // Fact Check is owner-only (paid web searches); guests never see the button.
-  useEffect(() => {
-    fetch('/api/fact-check')
-      .then(read_json)
-      .then(data => set_fact_check_allowed(data?.allowed === true))
-      .catch(() => { /* no Fact Check button */ });
   }, []);
 
   // Coming back from Google's consent screen: report the outcome, then tidy the URL.
@@ -824,16 +815,14 @@ export default function TextCleanerPage() {
               >
                 {loading_action === 'crunch' ? 'Crunching...' : 'Crunch'}
               </button>
-              {fact_check_allowed && (
-                <button
-                  onClick={fact_check}
-                  disabled={!!loading_action || !input.trim()}
-                  title="Check the facts against the web and fix the ones that are wrong"
-                  className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
-                >
-                  {loading_action === 'fact_check' ? 'Checking...' : 'Fact Check'}
-                </button>
-              )}
+              <button
+                onClick={fact_check}
+                disabled={!!loading_action || !input.trim()}
+                title="Check the facts against the web and fix the ones that are wrong"
+                className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
+              >
+                {loading_action === 'fact_check' ? 'Checking...' : 'Fact Check'}
+              </button>
             </div>
             <button
               onClick={clear_all}

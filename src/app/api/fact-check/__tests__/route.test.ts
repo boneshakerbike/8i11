@@ -14,9 +14,8 @@ vi.mock('@anthropic-ai/sdk', async importOriginal => {
   return { default: FakeAnthropic };
 });
 
-import { GET, POST } from '@/app/api/fact-check/route';
+import { POST } from '@/app/api/fact-check/route';
 import { MAX_CONTINUATIONS, SUBMIT_TOOL } from '@/lib/fact_check';
-import { OWNER_SIGN_IN_HINT } from '@/lib/owner';
 
 const TEXT = 'The Titanic sank in 1913. I loved the museum.';
 const URL = 'https://example.org/titanic';
@@ -58,31 +57,18 @@ describe('POST /api/fact-check', () => {
     create.mockReset();
     getToken.mockResolvedValue({ provider: 'github', login: 'boneshakerbike' });
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
-    vi.stubEnv('VERCEL_ENV', 'production');
   });
 
-  it('refuses a guest with the sign-in hint before calling the model', async () => {
+  it('works for a guest, like the other Say What? buttons', async () => {
     getToken.mockResolvedValue({ provider: 'guest-pin', sub: 'guest' });
-    const res = await post({ content: TEXT });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: OWNER_SIGN_IN_HINT });
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it('accepts the Admin PIN only on a preview', async () => {
-    getToken.mockResolvedValue({ provider: 'admin-pin', sub: 'admin' });
     create.mockResolvedValue(message([submit([])], 'tool_use'));
-    expect((await post({ content: TEXT })).status).toBe(403);
-
-    vi.stubEnv('VERCEL_ENV', 'preview');
     expect((await post({ content: TEXT })).status).toBe(200);
   });
 
-  it('tells the page whether to show the button', async () => {
-    const allowed = async () => (await (await GET(new NextRequest('https://8i11.vercel.app/api/fact-check'))).json()).allowed;
-    expect(await allowed()).toBe(true);
-    getToken.mockResolvedValue({ provider: 'guest-pin', sub: 'guest' });
-    expect(await allowed()).toBe(false);
+  it('refuses a request with no session before calling the model', async () => {
+    getToken.mockResolvedValue(null);
+    expect((await post({ content: TEXT })).status).toBe(401);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('refuses text over the size cap before calling the model', async () => {

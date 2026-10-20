@@ -1,17 +1,14 @@
 /**
- * API route: /api/fact-check
- * POST checks the factual claims in rough text against the web (see
- * MODELS.FACT_CHECK) and returns the text with the verified fixes applied, plus
- * what was checked. GET says whether this session may use it, so the page shows
- * the button only then. Owner only (or the Admin PIN on a preview): each check
- * costs paid searches and Opus tokens.
+ * API route: POST /api/fact-check
+ * Checks the factual claims in rough text against the web (see MODELS.FACT_CHECK)
+ * and returns the text with the verified fixes applied, plus what was checked.
+ * Open to any signed-in session, guests included, like the other Say What? buttons.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
-import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner';
 import {
   apply_fixes,
   check_findings,
@@ -30,13 +27,9 @@ const MAX_INPUT = 20000;
 const DEADLINE_MS = 270_000;
 const MIN_REQUEST_MS = 30_000;
 
-export async function GET(request: NextRequest) {
-  return NextResponse.json({ allowed: is_owner_or_preview_admin(await getToken({ req: request })) });
-}
-
 export async function POST(request: NextRequest) {
-  if (!is_owner_or_preview_admin(await getToken({ req: request }))) {
-    return NextResponse.json({ error: OWNER_SIGN_IN_HINT }, { status: 403 });
+  if (!(await getToken({ req: request }))) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   const api_key = process.env.ANTHROPIC_API_KEY;
