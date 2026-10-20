@@ -10,6 +10,7 @@ import NavTabs from '@/components/nav_tabs';
 import { build_issue_url } from '@/lib/github_issue';
 import { knowledge_filename } from '@/lib/knowledge_doc';
 import { count_words } from '@/lib/crunch';
+import type { FactFinding } from '@/lib/fact_check';
 
 interface TextNote {
   id: string;
@@ -39,6 +40,13 @@ interface DriveResult {
   reason?: string;
 }
 
+const FACT_STATUS: Record<FactFinding['status'], { label: string; className: string }> = {
+  fixed: { label: 'Fixed', className: 'bg-green-500/20 text-green-300' },
+  correct: { label: 'Correct', className: 'bg-cyan-500/20 text-cyan-300' },
+  unverified: { label: 'Couldn\'t verify', className: 'bg-amber-500/20 text-amber-300' },
+  not_fixed: { label: 'Wrong, not fixed', className: 'bg-red-500/20 text-red-300' },
+};
+
 // Parse a JSON response; the auth proxy answers some requests with a login
 // redirect (HTML), which should read as an error rather than throw.
 const read_json = async (res: Response): Promise<Record<string, unknown> | null> => {
@@ -49,11 +57,14 @@ export default function TextCleanerPage() {
   const [input, set_input] = useState('');
   const [cleaned, set_cleaned] = useState('');
   const [story, set_story] = useState('');
-  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
-  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | null>(null);
+  const [loading_action, set_loading_action] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | 'fact_check' | 'story' | 'substack' | 'save' | 'delete' | 'drive' | 'drive_apply' | null>(null);
+  const [output_mode, set_output_mode] = useState<'clean' | 'clarify' | 'knowledge' | 'first_person' | 'crunch' | 'fact_check' | null>(null);
   // Word count of the input a Crunch ran on, so the output header can show how far it shrank.
   // Not persisted: the input isn't either, so a restored draft just hides the count.
   const [crunch_source_words, set_crunch_source_words] = useState<number | null>(null);
+  // What a Fact Check looked at. Not persisted either: a restored draft keeps only the fixed text.
+  const [fact_findings, set_fact_findings] = useState<FactFinding[] | null>(null);
+  const [fact_searches, set_fact_searches] = useState<number | null>(null);
   const [error, set_error] = useState<string | null>(null);
   const [copy_status, set_copy_status] = useState<string | null>(null);
   const [clean_usage, set_clean_usage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
@@ -146,7 +157,7 @@ export default function TextCleanerPage() {
       if (saved_story)   set_story(saved_story);
       if (saved_cleaned) {
         set_output_mode(
-          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge' || saved_output_mode === 'first_person' || saved_output_mode === 'crunch'
+          saved_output_mode === 'clarify' || saved_output_mode === 'knowledge' || saved_output_mode === 'first_person' || saved_output_mode === 'crunch' || saved_output_mode === 'fact_check'
             ? saved_output_mode
             : 'clean'
         );
@@ -231,6 +242,8 @@ export default function TextCleanerPage() {
       }
       set_output_mode(op);
       set_crunch_source_words(op === 'crunch' ? count_words(input) : null);
+      set_fact_findings(null);
+      set_fact_searches(null);
       set_story('');
       set_story_usage(null);
       set_substack('');
@@ -248,6 +261,47 @@ export default function TextCleanerPage() {
   const knowledge_doc = () => run_rewrite('knowledge');
   const first_person = () => run_rewrite('first_person');
   const crunch = () => run_rewrite('crunch');
+
+  // A plain fetch rather than post_clean_text: its automatic retry would repeat paid web searches.
+  const fact_check = async () => {
+    if (!input.trim()) return;
+
+    set_loading_action('fact_check');
+    set_error(null);
+
+    try {
+      const res = await fetch('/api/fact-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: input }),
+      });
+      const data = await read_json(res);
+      // Non-JSON body = gateway timeout (504) or proxy error page
+      if (!data) throw new Error('TIMEOUT');
+
+      if (!res.ok) {
+        set_error((data.error as string) || 'Something went wrong');
+        return;
+      }
+
+      const usage = data.usage as { input_tokens: number; output_tokens: number; searches: number } | undefined;
+      set_cleaned((data.fixed as string) ?? '');
+      set_clean_usage(usage ? { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens } : null);
+      set_fact_findings((data.findings as FactFinding[]) ?? []);
+      set_fact_searches(usage?.searches ?? null);
+      set_output_mode('fact_check');
+      set_crunch_source_words(null);
+      set_story('');
+      set_story_usage(null);
+      set_substack('');
+      set_substack_usage(null);
+      set_substack_warnings([]);
+    } catch (e) {
+      set_error(describe_request_error(e, 'fact check text'));
+    } finally {
+      set_loading_action(null);
+    }
+  };
 
   // Hand the markdown to the browser as a file. Object URL rather than a data:
   // URL so a long document isn't capped by the URL length limit.
@@ -390,6 +444,8 @@ export default function TextCleanerPage() {
     set_substack_warnings([]);
     set_output_mode(null);
     set_crunch_source_words(null);
+    set_fact_findings(null);
+    set_fact_searches(null);
   };
 
   const save_note = async () => {
@@ -453,6 +509,8 @@ export default function TextCleanerPage() {
   const handle_note_story = (note: TextNote) => {
     set_cleaned(note.content);
     set_crunch_source_words(null);
+    set_fact_findings(null);
+    set_fact_searches(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Use setTimeout so the cleaned state is set before triggering story generation
     setTimeout(() => {
@@ -757,6 +815,14 @@ export default function TextCleanerPage() {
               >
                 {loading_action === 'crunch' ? 'Crunching...' : 'Crunch'}
               </button>
+              <button
+                onClick={fact_check}
+                disabled={!!loading_action || !input.trim()}
+                title="Check the facts against the web and fix the ones that are wrong"
+                className="flex-1 sm:flex-none sm:w-auto px-8 py-[14px] sm:py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-white/10 disabled:text-gray-500 text-black font-semibold rounded-lg transition-all text-sm"
+              >
+                {loading_action === 'fact_check' ? 'Checking...' : 'Fact Check'}
+              </button>
             </div>
             <button
               onClick={clear_all}
@@ -784,11 +850,17 @@ export default function TextCleanerPage() {
               <div className="bg-white/5 px-4 py-2 border-b border-white/10 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium text-gray-300">
-                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : output_mode === 'first_person' ? 'First Person' : output_mode === 'crunch' ? 'Crunched' : 'Cleaned'}
+                    {output_mode === 'clarify' ? 'Clarified' : output_mode === 'knowledge' ? 'Knowledge Doc' : output_mode === 'first_person' ? 'First Person' : output_mode === 'crunch' ? 'Crunched' : output_mode === 'fact_check' ? 'Fact Checked' : 'Cleaned'}
                   </h3>
                   {output_mode === 'crunch' && crunch_source_words ? (
                     <span className="text-xs text-gray-400">
                       {count_words(cleaned)} of {crunch_source_words} words ({Math.round(count_words(cleaned) / crunch_source_words * 100)}%)
+                    </span>
+                  ) : null}
+                  {output_mode === 'fact_check' && fact_findings ? (
+                    <span className="text-xs text-gray-400">
+                      {fact_findings.filter(f => f.status === 'fixed').length} fixed, {fact_findings.length} checked
+                      {fact_searches !== null ? `, ${fact_searches} ${fact_searches === 1 ? 'search' : 'searches'}` : ''}
                     </span>
                   ) : null}
                   {clean_usage && (
@@ -854,6 +926,47 @@ export default function TextCleanerPage() {
                 className="w-full p-4 font-mono text-sm resize-none focus:outline-none bg-transparent text-gray-200"
                 style={{ minHeight: '180px' }}
               />
+              {/* What the fact check looked at; the text above has only the Fixed items changed */}
+              {output_mode === 'fact_check' && fact_findings && (
+                <div className="px-4 py-3 border-t border-white/10 text-sm">
+                  {fact_findings.length === 0 ? (
+                    <p className="text-gray-400">No checkable facts found.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {fact_findings.map((f, i) => (
+                        <li key={i}>
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${FACT_STATUS[f.status].className}`}>
+                              {FACT_STATUS[f.status].label}
+                            </span>
+                            <span className="text-gray-200">{f.claim}</span>
+                          </div>
+                          {f.replacement && (f.status === 'fixed' || f.status === 'not_fixed') && (
+                            <p className="text-gray-300 mt-1">{f.status === 'fixed' ? 'Now says' : 'Should say'}: {f.replacement}</p>
+                          )}
+                          {f.explanation && <p className="text-gray-400 mt-1">{f.explanation}</p>}
+                          {f.note && <p className="text-xs text-amber-300/80 mt-1">{f.note}</p>}
+                          {f.sources.length > 0 && (
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                              {f.sources.map((s, j) => (
+                                <a
+                                  key={j}
+                                  href={s.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-cyan-400 hover:text-cyan-300 break-all"
+                                >
+                                  {s.title}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
