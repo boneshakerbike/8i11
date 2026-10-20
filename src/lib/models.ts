@@ -17,4 +17,6 @@ export const MODELS = {
   COACHING_DAILY:   'claude-opus-5-5',
   COACHING_REFINE:  'claude-haiku-4-5-20251001',
   DRIVE_KNOWLEDGE:  'claude-sonnet-5',
+  // Web search fact check; same always-thinking rules as COACHING_DAILY.
+  FACT_CHECK:       'claude-opus-5-5',
 }
