@@ -1,13 +1,17 @@
 /**
- * API route: POST /api/fact-check
- * Checks the factual claims in rough text against the web (see MODELS.FACT_CHECK)
- * and returns the text with the verified fixes applied, plus what was checked.
+ * API route: /api/fact-check
+ * POST checks the factual claims in rough text against the web (see
+ * MODELS.FACT_CHECK) and returns the text with the verified fixes applied, plus
+ * what was checked. GET says whether this session may use it, so the page shows
+ * the button only then. Owner only (or the Admin PIN on a preview): each check
+ * costs paid searches and Opus tokens.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from '@/lib/models';
+import { OWNER_SIGN_IN_HINT, is_owner_or_preview_admin } from '@/lib/owner';
 import {
   apply_fixes,
   check_findings,
@@ -15,7 +19,7 @@ import {
   fact_check_tools,
   MAX_CONTINUATIONS,
   read_submission,
-  seen_urls,
+  search_results,
 } from '@/lib/fact_check';
 
 // Web searches plus a thinking model; Vercel Pro allows up to 300s.
@@ -26,25 +30,14 @@ const MAX_INPUT = 20000;
 const DEADLINE_MS = 270_000;
 const MIN_REQUEST_MS = 30_000;
 
-async function require_auth(request: NextRequest): Promise<NextResponse | null> {
-  const token = await getToken({ req: request });
-  if (token) return null;
-
-  const pin_header = request.headers.get('X-Guest-Pin');
-  if (pin_header) {
-    const valid_pins = (process.env.GUEST_PINS || process.env.GUEST_PIN || '')
-      .split(',')
-      .map(p => p.trim())
-      .filter(Boolean);
-    if (valid_pins.includes(pin_header)) return null;
-  }
-
-  return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+export async function GET(request: NextRequest) {
+  return NextResponse.json({ allowed: is_owner_or_preview_admin(await getToken({ req: request })) });
 }
 
 export async function POST(request: NextRequest) {
-  const auth_error = await require_auth(request);
-  if (auth_error) return auth_error;
+  if (!is_owner_or_preview_admin(await getToken({ req: request }))) {
+    return NextResponse.json({ error: OWNER_SIGN_IN_HINT }, { status: 403 });
+  }
 
   const api_key = process.env.ANTHROPIC_API_KEY;
   if (!api_key) {
@@ -116,7 +109,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'The fact check didn\'t finish. Try again.' }, { status: 502 });
     }
 
-    const { fixed, findings } = apply_fixes(content, check_findings(submitted, seen_urls(produced)));
+    const { fixed, findings } = apply_fixes(content, check_findings(submitted, search_results(produced)));
 
     return NextResponse.json({
       success: true,

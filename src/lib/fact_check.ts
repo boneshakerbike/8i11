@@ -56,8 +56,8 @@ export const fact_check_tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: SUBMIT_TOOL,
     description: 'Report the fact check. Call this exactly once, after searching, with every claim you checked.',
-    // No strict mode: structured outputs are documented as incompatible with
-    // citations, which web search always returns. read_submission checks the shape.
+    // No strict mode: it is untested next to web search, whose results always
+    // carry citations, and read_submission checks the shape anyway.
     input_schema: {
       type: 'object',
       properties: {
@@ -125,24 +125,41 @@ For a wrong claim:
 ${text}
 </text_to_check>
 
-When you are done, call ${SUBMIT_TOOL} exactly once with every claim you checked. If there are no checkable claims, call it with an empty findings list.`;
+When you are done, call ${SUBMIT_TOOL} exactly once with every claim you checked. Call it on its own, after your last search has returned, never in the same turn as a search. If there are no checkable claims, call it with an empty findings list.`;
 }
 
-/** Trimmed, without a #fragment or trailing slash, so the same page matches however it is written. */
+/**
+ * A matching key for a URL, so the same page matches however the model copies
+ * it: lower-case host without "www.", no #fragment, no trailing slash.
+ */
 export function normalize_url(url: string): string {
-  return url.trim().replace(/#.*$/, '').replace(/\/+$/, '');
+  try {
+    const parsed = new URL(url.trim());
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.replace(/^www\./, '');
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return url.trim().replace(/#.*$/, '').replace(/\/+$/, '');
+  }
 }
 
-/** Every URL web search returned in this response. Error results carry no URLs. */
-export function seen_urls(content: Anthropic.Beta.BetaContentBlock[]): Set<string> {
-  const urls = new Set<string>();
+/**
+ * Every page web search returned, keyed by normalize_url, with the URL and
+ * title as the search gave them. Pass the content of every response in the
+ * check, since a pause_turn continuation holds only its new blocks. Error
+ * results carry no pages.
+ */
+export function search_results(content: Anthropic.Beta.BetaContentBlock[]): Map<string, Source> {
+  const results = new Map<string, Source>();
   for (const block of content) {
     if (block.type !== 'web_search_tool_result' || !Array.isArray(block.content)) continue;
     for (const result of block.content) {
-      if (typeof result.url === 'string') urls.add(normalize_url(result.url));
+      if (typeof result.url !== 'string') continue;
+      const key = normalize_url(result.url);
+      if (!results.has(key)) results.set(key, { url: result.url, title: result.title || result.url });
     }
   }
-  return urls;
+  return results;
 }
 
 const is_text_or_null = (v: unknown): v is string | null => v === null || typeof v === 'string';
@@ -187,17 +204,18 @@ export interface CheckedFinding extends Finding {
 }
 
 /**
- * Keep only sources web search actually returned, and drop a verdict that no
- * remaining source backs to unverified. Model memory alone never counts.
+ * Keep only sources web search actually returned, shown as the search gave
+ * them, and drop a verdict that no remaining source backs to unverified.
+ * Model memory alone never counts.
  */
-export function check_findings(findings: Finding[], urls: Set<string>): CheckedFinding[] {
+export function check_findings(findings: Finding[], results: Map<string, Source>): CheckedFinding[] {
   return findings.slice(0, MAX_FINDINGS).map(f => {
     const kept = new Map<string, Source>();
     for (const s of f.sources) {
-      const url = normalize_url(s.url);
+      const seen = results.get(normalize_url(s.url));
       // The page renders these as links, so only web addresses
-      if (!/^https?:\/\//i.test(url)) continue;
-      if (urls.has(url) && !kept.has(url)) kept.set(url, { url: s.url.trim(), title: s.title.trim() || url });
+      if (!seen || !/^https?:\/\//i.test(seen.url) || kept.has(seen.url)) continue;
+      kept.set(seen.url, seen);
     }
     const sources = [...kept.values()].slice(0, MAX_SOURCES);
     if (f.verdict !== 'unverified' && sources.length === 0) {
@@ -231,6 +249,12 @@ export function apply_fixes(text: string, findings: CheckedFinding[]): { fixed: 
 
     if (!original.trim() || !replacement.trim() || original === replacement) {
       out[index].note = 'No exact wording to replace was given.';
+      return;
+    }
+    // A fact fix never needs a new link; one is more likely planted by a search result
+    const links = replacement.match(/https?:\/\/\S+|www\.\S+/gi) ?? [];
+    if (links.some(link => !original.includes(link))) {
+      out[index].note = 'The suggested fix added a link, so it wasn\'t applied.';
       return;
     }
     const start = text.indexOf(original);

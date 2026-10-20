@@ -8,7 +8,8 @@ import {
   MAX_FINDINGS,
   normalize_url,
   read_submission,
-  seen_urls,
+  search_results,
+  Source,
   SUBMIT_TOOL,
 } from '@/lib/fact_check';
 
@@ -36,18 +37,23 @@ describe('normalize_url', () => {
   it('drops a fragment and trailing slash and trims', () => {
     expect(normalize_url('  https://example.org/a/#top ')).toBe('https://example.org/a');
   });
+
+  it('ignores host case and a leading www', () => {
+    expect(normalize_url('https://WWW.Example.org/Page')).toBe(normalize_url('https://example.org/Page'));
+  });
 });
 
-describe('seen_urls', () => {
-  it('collects URLs from every search result block and skips error results', () => {
-    const urls = seen_urls(blocks([
+describe('search_results', () => {
+  it('collects pages from every search result block and skips error results', () => {
+    const results = search_results(blocks([
       { type: 'thinking', thinking: '', signature: 's' },
       search_result(['https://a.example/x/', 'https://b.example/y']),
       { type: 'web_search_tool_result', tool_use_id: 'srv_2', content: { type: 'web_search_tool_result_error', error_code: 'unavailable' } },
       search_result([]),
       search_result(['https://c.example/z#frag']),
     ]));
-    expect([...urls].sort()).toEqual(['https://a.example/x', 'https://b.example/y', 'https://c.example/z']);
+    expect([...results.keys()].sort()).toEqual(['https://a.example/x', 'https://b.example/y', 'https://c.example/z']);
+    expect(results.get('https://a.example/x')).toEqual({ url: 'https://a.example/x/', title: 'https://a.example/x/' });
   });
 });
 
@@ -79,9 +85,10 @@ describe('read_submission', () => {
 });
 
 describe('check_findings', () => {
-  const urls = new Set(['https://example.org/titanic']);
+  const page: Source = { url: 'https://www.example.org/titanic', title: 'Titanic, from the search' };
+  const urls = new Map([[normalize_url(page.url), page]]);
 
-  it('removes sources web search never returned', () => {
+  it('removes sources web search never returned and shows the rest as the search gave them', () => {
     const [f] = check_findings([finding({
       verdict: 'correct',
       sources: [
@@ -90,7 +97,7 @@ describe('check_findings', () => {
       ],
     })], urls);
     expect(f.verdict).toBe('correct');
-    expect(f.sources).toEqual([{ url: 'https://example.org/titanic/', title: 'Titanic' }]);
+    expect(f.sources).toEqual([page]);
   });
 
   it('drops correct or wrong to unverified when no source is left', () => {
@@ -103,7 +110,7 @@ describe('check_findings', () => {
   it('never keeps a source that is not a web address', () => {
     const [f] = check_findings(
       [finding({ sources: [{ url: 'javascript:alert(1)', title: 'x' }] })],
-      new Set(['javascript:alert(1)']),
+      new Map([[normalize_url('javascript:alert(1)'), { url: 'javascript:alert(1)', title: 'x' }]]),
     );
     expect(f.sources).toEqual([]);
     expect(f.verdict).toBe('unverified');
@@ -150,6 +157,12 @@ describe('apply_fixes', () => {
       checked(),
     ]);
     expect(fixed).toBe('The Titanic sank in 1912 after hitting an iceberg. Its captain was Edward John Smith.');
+  });
+
+  it('refuses a fix that adds a link', () => {
+    const { fixed, findings } = apply_fixes(text, [checked({ replacement: '1912 (see https://evil.example)' })]);
+    expect(fixed).toBe(text);
+    expect(findings[0]).toMatchObject({ status: 'not_fixed', note: 'The suggested fix added a link, so it wasn\'t applied.' });
   });
 
   it('turns em dashes in a replacement into commas', () => {
