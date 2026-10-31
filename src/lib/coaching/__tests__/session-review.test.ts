@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_PROFILE_EDITS, apply_profile_edit, review_memory_lines, validate_review } from '@/lib/coaching/session-review';
+import { MAX_PROFILE_EDITS, apply_profile_edit, edit_applies, review_memory_lines, review_prompt, validate_review } from '@/lib/coaching/session-review';
 
 // Made-up profile
 const PROFILE = 'Rides an e-MTB.\nLifts at home with dumbbells.\nLeft knee is sore after long climbs.';
@@ -46,6 +46,18 @@ describe('validate_review', () => {
     ]);
   });
 
+  it('keeps one edit per profile line and per new line, so accepting one cannot leave another stale', () => {
+    const review = validate_review(raw({
+      profile_edits: [
+        { action: 'change', old_text: 'Rides an e-MTB.', new_text: 'Rides an e-MTB and a gravel bike.', reason: 'first' },
+        { action: 'remove', old_text: 'Rides an e-MTB.', new_text: '', reason: 'same line' },
+        { action: 'change', old_text: 'Rides an e-MTB.', new_text: 'Rides a gravel bike.', reason: 'same line' },
+        { action: 'add', old_text: '', new_text: 'Rides an e-MTB and a gravel bike.', reason: 'same new line' },
+      ],
+    }), PROFILE);
+    expect(review?.profile_edits.map(e => e.reason)).toEqual(['first']);
+  });
+
   it(`keeps at most ${MAX_PROFILE_EDITS} edits`, () => {
     const edits = Array.from({ length: 8 }, (_, i) => ({ action: 'add', old_text: '', new_text: `Fact ${i}.`, reason: 'r' }));
     expect(validate_review(raw({ profile_edits: edits }), PROFILE)?.profile_edits).toHaveLength(MAX_PROFILE_EDITS);
@@ -69,6 +81,31 @@ describe('apply_profile_edit', () => {
 
   it('is null when the line was edited away since', () => {
     expect(apply_profile_edit(PROFILE, { action: 'remove', old_text: 'Rides a gravel bike.', new_text: '', reason: '' })).toBeNull();
+  });
+
+  it('writes a "$" in the new text as is', () => {
+    expect(apply_profile_edit('Saddle cost a lot.', { action: 'change', old_text: 'Saddle cost a lot.', new_text: 'Saddle cost $$ and $& more.', reason: '' }))
+      .toBe('Saddle cost $$ and $& more.');
+  });
+});
+
+describe('edit_applies', () => {
+  it('is false once the line is gone, or the new line is already there', () => {
+    expect(edit_applies(PROFILE, { action: 'change', old_text: 'Rides an e-MTB.', new_text: 'Rides a gravel bike.', reason: '' })).toBe(true);
+    expect(edit_applies(`  ${PROFILE}\r\n`, { action: 'remove', old_text: 'Rides an e-MTB.', new_text: '', reason: '' })).toBe(true);
+    expect(edit_applies(PROFILE, { action: 'change', old_text: 'Rides a gravel bike.', new_text: 'x', reason: '' })).toBe(false);
+    expect(edit_applies(PROFILE, { action: 'add', old_text: '', new_text: 'Rides an e-MTB.', reason: '' })).toBe(false);
+    expect(edit_applies(PROFILE, { action: 'add', old_text: '', new_text: 'Owns a rower.', reason: '' })).toBe(true);
+  });
+});
+
+describe('review_prompt', () => {
+  // Issue #327: a change replaced an unrelated ride line with an app logging problem
+  it('says a change updates the same fact and app problems are developer notes', () => {
+    const prompt = review_prompt('Coach: hi', PROFILE);
+    expect(prompt).toContain('never overwrite an unrelated line');
+    expect(prompt).toContain('Problems with the app or its data go in developer_notes, never in profile_edits');
+    expect(prompt).toContain('At most one edit per profile line');
   });
 });
 

@@ -71,10 +71,10 @@ export function review_prompt(conversation: string, profile: string | null): str
 - developer_notes: problems with the app itself, such as wrong or missing data the coach or Bill pointed out. Empty if none.
 - profile_edits: at most ${MAX_PROFILE_EDITS} changes to his profile, only for facts that will still matter next week, not today's plan or numbers. Each is:
   - add: new_text is one new line; old_text is "".
-  - change: old_text is one existing line copied exactly from the profile; new_text replaces it.
+  - change: old_text is one existing line copied exactly from the profile; new_text is that same fact, updated. A different fact is an add: never overwrite an unrelated line.
   - remove: old_text is one existing line copied exactly from the profile that this session showed is no longer true; new_text is "".
   - reason: one short sentence saying what in the session supports it.
-  Propose nothing the profile already says. Empty if nothing should change.
+  At most one edit per profile line. Propose nothing the profile already says. Problems with the app or its data go in developer_notes, never in profile_edits. Empty if nothing should change.
 
 <profile>
 ${profile?.trim() || '(no profile saved yet)'}
@@ -92,10 +92,25 @@ const clean_list = (v: unknown): string[] | null => {
 
 const profile_lines = (profile: string) => profile.split('\n').map(l => l.trim()).filter(Boolean)
 
+/** The line a change or remove needs is there, and the line it would write is not. */
+const fits = (lines: string[], edit: ProfileEdit) =>
+  (edit.action === 'add' || lines.includes(edit.old_text)) &&
+  (edit.action === 'remove' || !lines.includes(edit.new_text))
+
+/**
+ * Whether an edit can still be applied to the profile as it is now. False once
+ * the line it changes or removes was edited away, or the line it adds is
+ * already there. Suggestions that no longer apply are not shown.
+ */
+export function edit_applies(profile: string, edit: ProfileEdit): boolean {
+  return fits(profile_lines(profile), edit)
+}
+
 /**
  * Check the model's output. A wrong shape returns null, and the caller stores
  * no review. A single edit that doesn't fit the profile (a line that isn't
- * there, a line that is already there) is dropped and the rest kept.
+ * there, a line that is already there, a second edit to the same line) is
+ * dropped and the rest kept.
  */
 export function validate_review(raw: unknown, profile: string | null): SessionReview | null {
   if (!raw || typeof raw !== 'object') return null
@@ -107,7 +122,9 @@ export function validate_review(raw: unknown, profile: string | null): SessionRe
   if (!facts_learned || !decisions || !developer_notes || !Array.isArray(r.profile_edits)) return null
 
   const lines = profile_lines(profile ?? '')
-  const seen = new Set<string>()
+  // Accepting one edit to a line would leave a second edit to it stale
+  const targeted = new Set<string>()
+  const written = new Set<string>()
   const profile_edits: ProfileEdit[] = []
   for (const e of r.profile_edits as unknown[]) {
     if (!e || typeof e !== 'object') return null
@@ -120,11 +137,12 @@ export function validate_review(raw: unknown, profile: string | null): SessionRe
       new_text: action === 'remove' ? '' : normalizeCoachText(new_text).trim().slice(0, MAX_ITEM_CHARS),
       reason: normalizeCoachText(reason).trim().slice(0, MAX_ITEM_CHARS),
     }
-    if (edit.action !== 'add' && !lines.includes(edit.old_text)) continue
-    if (edit.action !== 'remove' && (!edit.new_text || lines.includes(edit.new_text))) continue
-    const key = `${edit.action}|${edit.old_text}|${edit.new_text}`
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (edit.action !== 'remove' && !edit.new_text) continue
+    if (!fits(lines, edit)) continue
+    if (edit.action !== 'add' && targeted.has(edit.old_text)) continue
+    if (edit.action !== 'remove' && written.has(edit.new_text)) continue
+    if (edit.action !== 'add') targeted.add(edit.old_text)
+    if (edit.action !== 'remove') written.add(edit.new_text)
     profile_edits.push(edit)
     if (profile_edits.length === MAX_PROFILE_EDITS) break
   }
@@ -147,7 +165,8 @@ export function apply_profile_edit(profile: string, edit: ProfileEdit): string |
   const i = lines.findIndex(l => l.trim() === edit.old_text)
   if (i < 0) return null
   if (edit.action === 'remove') lines.splice(i, 1)
-  else lines[i] = lines[i].replace(edit.old_text, edit.new_text)
+  // A function replacer, so a "$&" or "$$" in the new text is kept as written
+  else lines[i] = lines[i].replace(edit.old_text, () => edit.new_text)
   return lines.join('\n')
 }
 
