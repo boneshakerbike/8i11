@@ -3,7 +3,9 @@
 /**
  * Profile edits the coach proposed after a session. Each one is accepted
  * (saved to the profile as a new version) or rejected; nothing changes the
- * profile until Bill accepts. Hidden when there is nothing to answer.
+ * profile until Bill accepts. After each answer the list is replaced with the
+ * server's, which leaves out suggestions the answer made stale. Hidden when
+ * there is nothing to answer or report.
  */
 
 import { useEffect, useState } from 'react'
@@ -21,7 +23,8 @@ export default function ProfileProposals({ initial, onDecided }: {
 }) {
   const [items, setItems] = useState<ProfileProposal[]>(initial ?? [])
   const [busy, setBusy] = useState<number | null>(null)
-  const [errors, setErrors] = useState<Record<number, string>>({})
+  // One line for the box: the item it was about may have just left the list
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (initial) { setItems(initial); return }
@@ -33,6 +36,7 @@ export default function ProfileProposals({ initial, onDecided }: {
 
   async function decide(p: ProfileProposal, accept: boolean) {
     setBusy(p.id)
+    setNotice(null)
     try {
       const res = await fetch(`/api/coaching/memory/proposals/${p.id}`, {
         method: 'POST',
@@ -40,25 +44,28 @@ export default function ProfileProposals({ initial, onDecided }: {
         body: JSON.stringify({ accept }),
       })
       const json = await res.json().catch(() => ({}))
+      if (Array.isArray(json.proposals)) setItems(json.proposals)
+      else if (res.ok) setItems(list => list.filter(x => x.id !== p.id))
       if (!res.ok) {
-        setErrors(e => ({ ...e, [p.id]: json.error ?? `HTTP ${res.status}` }))
+        setNotice(json.error ?? `HTTP ${res.status}`)
         return
       }
-      setItems(list => list.filter(x => x.id !== p.id))
       if (accept && json.profile_saved) onDecided?.()
     } catch (err) {
-      setErrors(e => ({ ...e, [p.id]: err instanceof Error ? err.message : String(err) }))
+      setNotice(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(null)
     }
   }
 
-  if (items.length === 0) return null
+  if (items.length === 0 && !notice) return null
 
   return (
     <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3 text-left">
       <h2 className="text-sm font-semibold text-white">Suggested profile changes</h2>
       <p className="text-xs text-gray-500">The coach suggests these from your sessions. Nothing changes until you accept.</p>
+      {notice && <p className="text-xs text-red-300">{notice}</p>}
+      {items.length === 0 && <p className="text-xs text-gray-500">No suggestions left to answer.</p>}
       {items.map(p => (
         <div key={p.id} className="border-t border-zinc-800 pt-3 space-y-1 text-sm">
           <div className="text-xs text-gray-500">{ACTION_LABEL[p.action]} · from {p.session_date}</div>
@@ -69,7 +76,6 @@ export default function ProfileProposals({ initial, onDecided }: {
             <button onClick={() => decide(p, true)} disabled={busy != null} className={`${btn} text-emerald-300`}>Accept</button>
             <button onClick={() => decide(p, false)} disabled={busy != null} className={btn}>Reject</button>
           </div>
-          {errors[p.id] && <p className="text-xs text-red-300">{errors[p.id]}</p>}
         </div>
       ))}
     </section>

@@ -72,21 +72,50 @@ describe('profile proposals', () => {
     const db = createClient({ url: ':memory:' });
     await save_memory_document(db, 'profile', 'Rides an e-MTB.', 'app');
     const [a, b] = await save_profile_proposals(db, '2026-10-13', [add('Has a new saddle.'), add('Owns a rower.')]);
-    expect(await decide_proposal(db, b.id, false)).toEqual({ ok: true, profile_saved: false });
+    expect(await decide_proposal(db, b.id, false)).toEqual({ ok: true, profile_saved: false, proposals: [a] });
     expect((await get_memory_document(db, 'profile'))?.body).toBe('Rides an e-MTB.');
-    expect(await decide_proposal(db, a.id, true)).toEqual({ ok: true, profile_saved: true });
+    expect(await decide_proposal(db, a.id, true)).toEqual({ ok: true, profile_saved: true, proposals: [] });
     expect(await get_memory_document(db, 'profile')).toMatchObject({ body: 'Rides an e-MTB.\nHas a new saddle.', source: 'coach:2026-10-13', versions: 2 });
     expect(await list_pending_proposals(db)).toEqual([]);
     expect((await decide_proposal(db, a.id, true)).ok).toBe(false);
   });
 
-  it('keeps a proposal pending when its line was edited away', async () => {
+  // Issue #327: a suggestion from 2026-10-28 for a line Bill had since edited
+  // stayed listed, and Accept could only fail.
+  it('leaves out a proposal whose line was edited away, and refuses to apply it', async () => {
+    const db = createClient({ url: ':memory:' });
+    await save_memory_document(db, 'profile', 'Rides an e-MTB.\nKnee is sore.', 'app');
+    const [p] = await save_profile_proposals(db, '2026-10-28', [{ action: 'change', old_text: 'Knee is sore.', new_text: 'Knee is sore after long climbs.', reason: 'He said so.' }]);
+    expect(await list_pending_proposals(db)).toHaveLength(1);
+    await save_memory_document(db, 'profile', 'Rides an e-MTB.\nKnee is fine.', 'app');
+    expect(await list_pending_proposals(db)).toEqual([]);
+    expect(await decide_proposal(db, p.id, true)).toEqual({
+      ok: false, status: 409, proposals: [],
+      error: 'Your profile changed since the coach suggested this, so it no longer applies.',
+    });
+    expect((await get_memory_document(db, 'profile'))?.body).toBe('Rides an e-MTB.\nKnee is fine.');
+  });
+
+  it('drops other suggestions for a line once one of them is accepted', async () => {
     const db = createClient({ url: ':memory:' });
     await save_memory_document(db, 'profile', 'Knee is sore.', 'app');
-    const [p] = await save_profile_proposals(db, '2026-10-13', [{ action: 'remove', old_text: 'Knee is sore.', new_text: '', reason: 'Fine now.' }]);
-    await save_memory_document(db, 'profile', 'Knee is fine.', 'app');
-    expect(await decide_proposal(db, p.id, true)).toMatchObject({ ok: false, status: 409 });
-    expect(await list_pending_proposals(db)).toHaveLength(1);
+    const [a] = await save_profile_proposals(db, '2026-10-28', [{ action: 'change', old_text: 'Knee is sore.', new_text: 'Knee is better.', reason: 'r' }]);
+    await save_profile_proposals(db, '2026-10-30', [{ action: 'remove', old_text: 'Knee is sore.', new_text: '', reason: 'r' }, add('Owns a rower.')]);
+    expect(await list_pending_proposals(db)).toHaveLength(3);
+    const result = await decide_proposal(db, a.id, true);
+    expect(result).toMatchObject({ ok: true, profile_saved: true });
+    expect(result.proposals.map(p => p.new_text)).toEqual(['Owns a rower.']);
+  });
+
+  it('lists the same suggestion from several sessions once, and one answer covers them all', async () => {
+    const db = createClient({ url: ':memory:' });
+    await save_memory_document(db, 'profile', 'Rides an e-MTB.', 'app');
+    await save_profile_proposals(db, '2026-10-28', [add('Owns a rower.')]);
+    await save_profile_proposals(db, '2026-10-29', [add('Owns a rower.')]);
+    const list = await list_pending_proposals(db);
+    expect(list.map(p => p.session_date)).toEqual(['2026-10-29']);
+    expect(await decide_proposal(db, list[0].id, false)).toMatchObject({ ok: true, proposals: [] });
+    expect(await list_pending_proposals(db)).toEqual([]);
   });
 
   it('replaces pending proposals when the same session is saved again', async () => {

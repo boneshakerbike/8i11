@@ -1,6 +1,7 @@
 /**
  * API route: POST /api/coaching/memory/proposals/[id]  body { accept: boolean }
  * Accept (apply to the profile as a new version) or reject one proposed edit.
+ * Answers, refusals included, carry the pending list as it is now.
  * Owner only (or the Admin PIN on a preview).
  */
 
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   try {
     const result = await decide_proposal(get_client(), id, accept)
-    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+    if (!result.ok) return NextResponse.json({ error: result.error, proposals: result.proposals }, { status: result.status })
     return NextResponse.json(result)
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
