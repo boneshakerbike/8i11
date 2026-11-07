@@ -15,6 +15,9 @@ import { get_memory_document, save_profile_proposals, type ProfileProposal } fro
 import { REVIEW_SCHEMA, review_prompt, validate_review, type SessionReview } from '@/lib/coaching/session-review';
 import { epoch_day_to_date_str } from '@/lib/coaching/day';
 
+// Same limit as the other coach routes, so a slow review cannot cut off the save
+export const maxDuration = 60;
+
 /**
  * Ask the small model for the structured review. Null when there is no API
  * key, the call fails, or the output does not validate: then the session is
@@ -26,13 +29,23 @@ async function review_session(conversation: string, profile: string | null): Pro
 
   try {
     const client = new Anthropic({ apiKey: api_key });
+    // Haiku 5.5 thinks by default, and thinking counts toward max_tokens: low
+    // effort keeps it close to Haiku 4.5, which did not think here, and the
+    // higher cap leaves room for the thinking plus the review
     const response = await client.messages.create({
       model: MODELS.COACHING_REFINE,
-      max_tokens: 2000,
-      output_config: { format: { type: 'json_schema', schema: REVIEW_SCHEMA as unknown as Record<string, unknown> } },
+      max_tokens: 8000,
+      output_config: {
+        effort: 'low',
+        format: { type: 'json_schema', schema: REVIEW_SCHEMA as unknown as Record<string, unknown> },
+      },
       messages: [{ role: 'user', content: review_prompt(conversation, profile) }],
     });
-    if (response.stop_reason !== 'end_turn') return null;
+    if (response.stop_reason !== 'end_turn') {
+      // max_tokens, or a safety refusal (Haiku 5.5 has no fallback): saved without a review
+      console.error('Session review stopped early:', response.stop_reason);
+      return null;
+    }
     const text = response.content.find(b => b.type === 'text');
     if (!text || text.type !== 'text') return null;
     return validate_review(JSON.parse(text.text), profile);

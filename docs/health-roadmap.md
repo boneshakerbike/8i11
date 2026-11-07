@@ -108,7 +108,7 @@ Done in this branch; see Status.
 - `coach_documents` table (core, profile; versioned).
 - Prompt: cached framework + core + profile, then the daily brief.
 - Summarizer returns structured output (facts learned, decisions, developer notes, proposed profile edits) and stores nothing when validation fails.
-- Model change proposed: `COACHING_DAILY` to `claude-opus-5-5` at low effort, `COACHING_REFINE` to `claude-haiku-5-5`. Bill decides.
+- Model change done: `COACHING_DAILY` is `claude-opus-5-5` at low effort. `COACHING_REFINE` moved to `claude-haiku-5-5` on 2026-11-07 (#318), after profile suggestions were confirmed working (#327). Haiku 5.5 thinks by default, so the finalize route sets low effort, raises `max_tokens` to 8,000 for room, and logs when a review stops early (output cap or safety refusal; the session is then saved without a review).
 
 ### Phase 4: Health area layout
 

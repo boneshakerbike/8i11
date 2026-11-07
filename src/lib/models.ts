@@ -15,7 +15,9 @@ export const MODELS = {
   // Opus 5.5 always thinks (no "disabled"); the coach route sets low effort
   // and reads the reply by block type (src/lib/coaching/reply.ts).
   COACHING_DAILY:   'claude-opus-5-5',
-  COACHING_REFINE:  'claude-haiku-4-5-20251001',
+  // Haiku 5.5 thinks by default and thinking counts toward max_tokens; the
+  // finalize route sets low effort and leaves room for it (#318).
+  COACHING_REFINE:  'claude-haiku-5-5',
   DRIVE_KNOWLEDGE:  'claude-sonnet-5',
   // Web search fact check; same always-thinking rules as COACHING_DAILY.
   FACT_CHECK:       'claude-opus-5-5',
