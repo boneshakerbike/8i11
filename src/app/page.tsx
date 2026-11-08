@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import NavTabs from '@/components/nav_tabs';
 import ClaudeStatus from '@/components/claude_status';
+import PrivateLinks from '@/components/private_links';
 import { TOOLS } from '@/lib/tools';
 import { SECTION_ACCENTS } from '@/lib/sections';
 
@@ -201,6 +202,7 @@ export default function HomePage() {
                 </a>
               ))}
             </div>
+            <PrivateLinks />
             <div className="space-y-1.5">
               <AdminSection
                 title="Permissions &amp; Access Control"
