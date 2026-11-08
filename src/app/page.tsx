@@ -10,7 +10,6 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import NavTabs from '@/components/nav_tabs';
 import ClaudeStatus from '@/components/claude_status';
-import PrivateLinks from '@/components/private_links';
 import { TOOLS } from '@/lib/tools';
 import { SECTION_ACCENTS } from '@/lib/sections';
 
@@ -42,6 +41,9 @@ const ADMIN_QUICK_LINKS = [
   { label: 'Scheduled', href: 'https://8i11.substack.com/publish/posts/scheduled' },
   { label: 'Turso',     href: 'https://app.turso.tech' },
   { label: 'Oura Dev',  href: 'https://developer.ouraring.com/applications' },
+  // Tailscale-only: works from my own devices with Tailscale on. Plain http on purpose.
+  { label: 'Barely OS',          href: 'http://barely-os:8080' },
+  { label: 'Barely OS (backup)', href: 'http://100.93.219.51:8080' },
 ];
 
 function AdminSection({
@@ -202,7 +204,9 @@ export default function HomePage() {
                 </a>
               ))}
             </div>
-            <PrivateLinks />
+            <p className="text-xs text-gray-400 mb-4">
+              Barely OS not opening? 1) Tailscale on and connected on this device. 2) Chromebook on, signed in, and hi run. 3) Try the backup link.
+            </p>
             <div className="space-y-1.5">
               <AdminSection
                 title="Permissions &amp; Access Control"
